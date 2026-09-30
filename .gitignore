@@ -1,0 +1,6 @@
+state/
+reports/
+*.tmp
+.env
+target/
+node_modules/

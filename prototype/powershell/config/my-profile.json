@@ -1,0 +1,19 @@
+{
+  "notes": "Personal rules for this PC. These are checked BEFORE the default rules, so they win. categoryActions overrides a whole category (stop | review | allow). disabledRules lists default rule ids to ignore. The ExamSafe window appends to 'rules' when you use 'Mark as block/allow'.",
+  "categoryActions": {},
+  "disabledRules": [],
+  "rules": [
+    { "id": "my-launchpad", "label": "Launchpad (my project dashboard)", "category": "overlay", "match": [
+      { "type": "process", "name": "Launchpad", "relaunch": true },
+      { "type": "startup", "name": "dk.mikkelblom.launchpad" },
+      { "type": "port", "port": 7420 } ] },
+    { "id": "my-itslearning-mcp", "label": "itslearning CLI / MCP server (its.exe)", "category": "ai", "match": [
+      { "type": "process", "name": "its" } ] },
+    { "id": "my-pms-vuln-watch", "label": "PMS Vulnerability Watch (work task)", "category": "work", "match": [
+      { "type": "task", "name": "\\PMS Vulnerability Watch" } ] },
+    { "id": "my-fix-windows-search", "label": "FixWindowsSearch (my registry tweak task)", "category": "system", "match": [
+      { "type": "task", "name": "\\FixWindowsSearch" } ] },
+    { "id": "my-nvidia-selfupdate", "label": "NVIDIA App self-update task", "category": "hardware", "match": [
+      { "type": "task", "name": "\\NVIDIA App SelfUpdate*" } ] }
+  ]
+}

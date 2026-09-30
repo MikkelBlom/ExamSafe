@@ -1,0 +1,393 @@
+{
+  "version": 1,
+  "notes": "Generic rules shipped with ExamSafe. Put personal additions in config/my-profile.json instead of editing this file. Match fields use PowerShell -like wildcards (* and ?), case-insensitive. A rule's action defaults to its category's action.",
+  "categories": {
+    "ai":             { "label": "AI assistants & AI tooling",           "action": "stop",   "description": "Chatbots, AI desktop apps, local LLM servers, AI dictation, MCP servers." },
+    "remoteAccess":   { "label": "Remote access & screen sharing",       "action": "stop",   "description": "Anything that lets another person see or control this PC." },
+    "communication":  { "label": "Chat & messaging",                     "action": "stop",   "description": "Messaging apps that could receive help during the exam." },
+    "deviceLink":     { "label": "Phone & device linking",               "action": "stop",   "description": "Phone mirroring, cross-device clipboard and file drop." },
+    "cloudSync":      { "label": "Cloud file sync",                      "action": "stop",   "description": "Folders that can receive files from outside during the exam." },
+    "overlay":        { "label": "Launchers, overlays & screen tools",   "action": "stop",   "description": "Pop-up launchers, always-on-top tools, screen capture/recording." },
+    "virtualization": { "label": "Virtual machines & containers",        "action": "stop",   "description": "VMs/WSL/Docker. Lockdown browsers often refuse to run next to them." },
+    "work":           { "label": "Work & dev background jobs",           "action": "stop",   "description": "Databases, dev servers, work automation. Not cheating, but noise you do not want mid-exam." },
+    "gaming":         { "label": "Gaming launchers & extras",            "action": "stop",   "description": "Launchers with chat/overlays, animated wallpapers." },
+    "network":        { "label": "VPN & network tunnels",                "action": "review", "description": "Might be needed (school VPN) or might be a problem. Decide per exam." },
+    "browser":        { "label": "Web browsers",                         "action": "review", "description": "Often needed for the exam itself, but extensions (AI sidebars) are a risk." },
+    "devTools":       { "label": "Editors & IDEs",                       "action": "review", "description": "Usually allowed in programming exams, but check for AI plugins (Copilot etc.)." },
+    "media":          { "label": "Music & media",                        "action": "review", "description": "Rarely a rule issue, but some proctoring flags audio apps." },
+    "custom":         { "label": "Your own rules",                       "action": "review", "description": "Rules you added from the ExamSafe window." },
+    "hardware":       { "label": "Drivers & hardware utilities",         "action": "allow",  "description": "Keyboard, mouse, GPU, audio, tablet and laptop vendor tools." },
+    "security":       { "label": "Antivirus & security",                 "action": "allow",  "description": "Never turned off by ExamSafe." },
+    "system":         { "label": "Windows & runtime components",         "action": "allow",  "description": "Shells, runtimes and Windows components (includes ExamSafe itself)." }
+  },
+  "rules": [
+    { "id": "claude", "label": "Claude (desktop, Cowork, Chrome bridge)", "category": "ai", "match": [
+      { "type": "process", "name": "claude", "relaunch": true },
+      { "type": "process", "name": "cowork-svc" },
+      { "type": "process", "name": "chrome-native-host", "path": "*\\Claude\\*" },
+      { "type": "service", "name": "CoworkVMService" } ] },
+    { "id": "chatgpt", "label": "ChatGPT / Codex desktop", "category": "ai", "match": [
+      { "type": "process", "name": "ChatGPT", "relaunch": true },
+      { "type": "process", "name": "Codex" },
+      { "type": "process", "name": "codex" } ] },
+    { "id": "copilot", "label": "Microsoft Copilot app", "category": "ai", "match": [
+      { "type": "process", "name": "mscopilot" },
+      { "type": "process", "name": "Copilot" },
+      { "type": "process", "name": "M365Copilot" },
+      { "type": "startup", "name": "MicrosoftCopilotAutoLaunch*" } ] },
+    { "id": "wispr-flow", "label": "Wispr Flow (AI dictation)", "category": "ai", "match": [
+      { "type": "process", "name": "Wispr Flow", "relaunch": true },
+      { "type": "process", "name": "Wispr Flow Helper" },
+      { "type": "startup", "name": "*Wispr*" } ] },
+    { "id": "local-llm", "label": "Local LLM servers (Ollama, LM Studio, GPT4All, Jan)", "category": "ai", "match": [
+      { "type": "process", "name": "ollama*" },
+      { "type": "process", "name": "LM Studio" },
+      { "type": "process", "name": "lms" },
+      { "type": "process", "name": "gpt4all*" },
+      { "type": "process", "name": "Jan" },
+      { "type": "port", "port": 11434 },
+      { "type": "port", "port": 1234 },
+      { "type": "startup", "name": "*Ollama*" } ] },
+    { "id": "ai-editors", "label": "AI-first editors (Cursor, Windsurf, Zed AI)", "category": "ai", "match": [
+      { "type": "process", "name": "Cursor" },
+      { "type": "process", "name": "Windsurf" } ] },
+    { "id": "ai-writing", "label": "AI writing / answer tools (Grammarly, Perplexity, Gemini)", "category": "ai", "match": [
+      { "type": "process", "name": "Grammarly*" },
+      { "type": "process", "name": "Perplexity" },
+      { "type": "process", "name": "Gemini" },
+      { "type": "startup", "name": "*Grammarly*" } ] },
+
+    { "id": "teamviewer", "label": "TeamViewer", "category": "remoteAccess", "match": [
+      { "type": "process", "name": "TeamViewer*" },
+      { "type": "service", "name": "TeamViewer" },
+      { "type": "port", "port": 5939 } ] },
+    { "id": "anydesk", "label": "AnyDesk", "category": "remoteAccess", "match": [
+      { "type": "process", "name": "AnyDesk*" },
+      { "type": "service", "name": "AnyDesk*" },
+      { "type": "port", "port": 7070 } ] },
+    { "id": "parsec", "label": "Parsec", "category": "remoteAccess", "match": [
+      { "type": "process", "name": "parsecd" },
+      { "type": "service", "name": "Parsec" } ] },
+    { "id": "rustdesk", "label": "RustDesk", "category": "remoteAccess", "match": [
+      { "type": "process", "name": "rustdesk" },
+      { "type": "service", "name": "RustDesk" } ] },
+    { "id": "chrome-remote-desktop", "label": "Chrome Remote Desktop", "category": "remoteAccess", "match": [
+      { "type": "process", "name": "remoting_host" },
+      { "type": "service", "name": "chromoting" } ] },
+    { "id": "splashtop", "label": "Splashtop", "category": "remoteAccess", "match": [
+      { "type": "process", "name": "SRService*" },
+      { "type": "process", "name": "SRServer*" },
+      { "type": "service", "name": "SplashtopRemoteService" } ] },
+    { "id": "vnc", "label": "VNC servers", "category": "remoteAccess", "match": [
+      { "type": "process", "name": "tvnserver" },
+      { "type": "process", "name": "winvnc*" },
+      { "type": "process", "name": "vncserver*" },
+      { "type": "service", "name": "tvnserver" },
+      { "type": "service", "name": "uvnc_service" },
+      { "type": "service", "name": "vncserver" },
+      { "type": "port", "port": 5900 } ] },
+    { "id": "sunshine", "label": "Sunshine / game streaming host", "category": "remoteAccess", "match": [
+      { "type": "process", "name": "sunshine" },
+      { "type": "service", "name": "SunshineService" },
+      { "type": "port", "port": 47989 } ] },
+    { "id": "rdp", "label": "Remote Desktop (incoming, port 3389)", "category": "remoteAccess", "match": [
+      { "type": "port", "port": 3389 } ] },
+    { "id": "glidex", "label": "ASUS GlideX (screen mirroring / remote)", "category": "remoteAccess", "match": [
+      { "type": "process", "name": "GlideX*" },
+      { "type": "service", "name": "GlideX*" } ] },
+
+    { "id": "slack", "label": "Slack", "category": "communication", "match": [
+      { "type": "process", "name": "slack", "relaunch": true },
+      { "type": "startup", "name": "*Slack*" } ] },
+    { "id": "discord", "label": "Discord", "category": "communication", "match": [
+      { "type": "process", "name": "Discord", "relaunch": true },
+      { "type": "startup", "name": "Discord" } ] },
+    { "id": "teams", "label": "Microsoft Teams", "category": "communication", "match": [
+      { "type": "process", "name": "ms-teams", "relaunch": true },
+      { "type": "process", "name": "Teams" },
+      { "type": "startup", "name": "*Teams*" } ] },
+    { "id": "messengers", "label": "Messengers (WhatsApp, Telegram, Signal, Messenger, Element)", "category": "communication", "match": [
+      { "type": "process", "name": "WhatsApp*" },
+      { "type": "process", "name": "Telegram" },
+      { "type": "process", "name": "Signal" },
+      { "type": "process", "name": "Messenger" },
+      { "type": "process", "name": "Element" },
+      { "type": "startup", "name": "*WhatsApp*" },
+      { "type": "startup", "name": "*Telegram*" },
+      { "type": "startup", "name": "*Signal*" } ] },
+    { "id": "video-calls", "label": "Video calls (Zoom, Skype)", "category": "communication", "match": [
+      { "type": "process", "name": "Zoom" },
+      { "type": "process", "name": "Skype*" },
+      { "type": "startup", "name": "*Zoom*" } ] },
+    { "id": "notion", "label": "Notion (shared notes, AI built in)", "category": "communication", "match": [
+      { "type": "process", "name": "Notion", "relaunch": true },
+      { "type": "startup", "name": "*Notion*" } ] },
+
+    { "id": "phone-link", "label": "Phone Link / Cross Device", "category": "deviceLink", "match": [
+      { "type": "process", "name": "PhoneExperienceHost" },
+      { "type": "process", "name": "YourPhone*" },
+      { "type": "process", "name": "CrossDeviceService" },
+      { "type": "process", "name": "CrossDeviceResume" } ] },
+    { "id": "samsung-quick-share", "label": "Samsung Quick Share", "category": "deviceLink", "match": [
+      { "type": "process", "name": "QuickShare*" },
+      { "type": "service", "name": "SamsungQuickShareService" } ] },
+    { "id": "kde-connect", "label": "KDE Connect / Intel Unison", "category": "deviceLink", "match": [
+      { "type": "process", "name": "kdeconnect*" },
+      { "type": "process", "name": "Unison*" } ] },
+
+    { "id": "google-drive", "label": "Google Drive for desktop", "category": "cloudSync", "match": [
+      { "type": "process", "name": "GoogleDriveFS", "relaunch": true },
+      { "type": "startup", "name": "GoogleDriveFS" } ] },
+    { "id": "onedrive", "label": "OneDrive", "category": "cloudSync", "match": [
+      { "type": "process", "name": "OneDrive", "relaunch": true },
+      { "type": "startup", "name": "OneDrive*" },
+      { "type": "task", "name": "\\OneDrive Startup Task*" } ] },
+    { "id": "dropbox", "label": "Dropbox", "category": "cloudSync", "match": [
+      { "type": "process", "name": "Dropbox", "relaunch": true },
+      { "type": "service", "name": "Dbx*" },
+      { "type": "startup", "name": "Dropbox*" } ] },
+    { "id": "other-sync", "label": "Other sync (iCloud, Nextcloud, MEGA, Syncthing)", "category": "cloudSync", "match": [
+      { "type": "process", "name": "iCloud*" },
+      { "type": "process", "name": "nextcloud" },
+      { "type": "process", "name": "MEGAsync" },
+      { "type": "process", "name": "syncthing*" } ] },
+
+    { "id": "flow-launcher", "label": "Flow Launcher", "category": "overlay", "match": [
+      { "type": "process", "name": "Flow.Launcher", "relaunch": true },
+      { "type": "startup", "name": "Flow.Launcher" } ] },
+    { "id": "powertoys", "label": "PowerToys & Command Palette", "category": "overlay", "match": [
+      { "type": "process", "name": "PowerToys", "relaunch": true },
+      { "type": "process", "name": "PowerToys.*" },
+      { "type": "process", "name": "Microsoft.CmdPal.*" },
+      { "type": "task", "name": "\\PowerToys\\*" } ] },
+    { "id": "other-launchers", "label": "Other launchers (Raycast, Listary, Wox)", "category": "overlay", "match": [
+      { "type": "process", "name": "Raycast" },
+      { "type": "process", "name": "Listary" },
+      { "type": "process", "name": "Wox" } ] },
+    { "id": "screen-capture", "label": "Screen capture & recording (OBS, ShareX, Snagit)", "category": "overlay", "match": [
+      { "type": "process", "name": "obs64" },
+      { "type": "process", "name": "ShareX", "relaunch": true },
+      { "type": "process", "name": "Snagit*" },
+      { "type": "startup", "name": "ShareX" } ] },
+    { "id": "clipboard-managers", "label": "Clipboard managers (Ditto, CopyQ)", "category": "overlay", "match": [
+      { "type": "process", "name": "Ditto" },
+      { "type": "process", "name": "copyq" } ] },
+
+    { "id": "wsl", "label": "WSL", "category": "virtualization", "match": [
+      { "type": "process", "name": "wsl" },
+      { "type": "process", "name": "wslhost" },
+      { "type": "process", "name": "wslrelay" },
+      { "type": "process", "name": "vmmem*" },
+      { "type": "service", "name": "WSLService" } ] },
+    { "id": "docker", "label": "Docker Desktop", "category": "virtualization", "match": [
+      { "type": "process", "name": "Docker Desktop", "relaunch": true },
+      { "type": "process", "name": "com.docker.*" },
+      { "type": "service", "name": "com.docker.service" } ] },
+    { "id": "virtualbox", "label": "VirtualBox", "category": "virtualization", "match": [
+      { "type": "process", "name": "VirtualBox*" },
+      { "type": "process", "name": "VBox*" },
+      { "type": "service", "name": "VBox*" } ] },
+    { "id": "vmware", "label": "VMware", "category": "virtualization", "match": [
+      { "type": "process", "name": "vmware*" },
+      { "type": "service", "name": "VMware*" },
+      { "type": "service", "name": "VMAuthdService" },
+      { "type": "service", "name": "VMnetDHCP" },
+      { "type": "service", "name": "VMUSBArbService" } ] },
+
+    { "id": "sql-server", "label": "Microsoft SQL Server", "category": "work", "match": [
+      { "type": "process", "name": "sqlservr" },
+      { "type": "service", "name": "MSSQL*" },
+      { "type": "service", "name": "SQLAgent*" },
+      { "type": "service", "name": "SQLTELEMETRY*" },
+      { "type": "service", "name": "SQLWriter" },
+      { "type": "service", "name": "SQLBrowser" },
+      { "type": "port", "port": 1433 } ] },
+    { "id": "other-databases", "label": "Other databases (MySQL, PostgreSQL, MongoDB, Redis)", "category": "work", "match": [
+      { "type": "process", "name": "mysqld" },
+      { "type": "process", "name": "postgres" },
+      { "type": "process", "name": "mongod" },
+      { "type": "process", "name": "redis-server" },
+      { "type": "service", "name": "MySQL*" },
+      { "type": "service", "name": "postgresql*" },
+      { "type": "service", "name": "MongoDB" },
+      { "type": "service", "name": "Redis" },
+      { "type": "port", "port": 3306 },
+      { "type": "port", "port": 5432 },
+      { "type": "port", "port": 27017 },
+      { "type": "port", "port": 6379 } ] },
+    { "id": "node-dev", "label": "Node.js / dev servers (incl. CLI agents & MCP servers)", "category": "work", "match": [
+      { "type": "process", "name": "node" },
+      { "type": "process", "name": "esbuild" },
+      { "type": "process", "name": "bun" },
+      { "type": "process", "name": "deno" } ] },
+
+    { "id": "steam", "label": "Steam (friends chat, overlay)", "category": "gaming", "match": [
+      { "type": "process", "name": "steam" },
+      { "type": "process", "name": "steamwebhelper" },
+      { "type": "startup", "name": "Steam" } ] },
+    { "id": "wallpaper-engine", "label": "Wallpaper Engine", "category": "gaming", "match": [
+      { "type": "process", "name": "wallpaper32" },
+      { "type": "process", "name": "wallpaper64", "relaunch": true },
+      { "type": "startup", "name": "WallpaperEngine" } ] },
+    { "id": "game-launchers", "label": "Game launchers (Epic, Ubisoft, EA, Battle.net, Xbox)", "category": "gaming", "match": [
+      { "type": "process", "name": "EpicGamesLauncher" },
+      { "type": "process", "name": "upc" },
+      { "type": "process", "name": "UbisoftConnect" },
+      { "type": "process", "name": "EADesktop" },
+      { "type": "process", "name": "Battle.net" },
+      { "type": "process", "name": "XboxPcApp" },
+      { "type": "task", "name": "\\Ubisoft\\*" } ] },
+
+    { "id": "vpn-clients", "label": "VPN clients (Cisco, Bitdefender VPN, NordVPN, Proton, WireGuard, OpenVPN)", "category": "network", "match": [
+      { "type": "process", "name": "vpnagent" },
+      { "type": "process", "name": "csc_ui" },
+      { "type": "service", "name": "csc_vpnagent" },
+      { "type": "process", "name": "BdVpnApp" },
+      { "type": "service", "name": "bdvpnservice" },
+      { "type": "startup", "name": "BdVpnApp" },
+      { "type": "process", "name": "NordVPN*" },
+      { "type": "process", "name": "ProtonVPN*" },
+      { "type": "process", "name": "wireguard" },
+      { "type": "process", "name": "openvpn*" } ] },
+    { "id": "mesh-networks", "label": "Mesh networks (Tailscale, ZeroTier)", "category": "network", "match": [
+      { "type": "process", "name": "tailscale*" },
+      { "type": "service", "name": "Tailscale" },
+      { "type": "process", "name": "zerotier*" },
+      { "type": "service", "name": "ZeroTierOneService" } ] },
+
+    { "id": "browsers", "label": "Web browsers", "category": "browser", "match": [
+      { "type": "process", "name": "chrome" },
+      { "type": "process", "name": "msedge" },
+      { "type": "process", "name": "firefox" },
+      { "type": "process", "name": "brave" },
+      { "type": "process", "name": "opera*" },
+      { "type": "process", "name": "vivaldi" },
+      { "type": "process", "name": "arc" },
+      { "type": "startup", "name": "GoogleChromeAutoLaunch*" },
+      { "type": "startup", "name": "MicrosoftEdgeAutoLaunch*" } ] },
+    { "id": "ides", "label": "Editors & IDEs (check for AI plugins!)", "category": "devTools", "match": [
+      { "type": "process", "name": "Code" },
+      { "type": "process", "name": "devenv" },
+      { "type": "process", "name": "idea64" },
+      { "type": "process", "name": "pycharm64" },
+      { "type": "process", "name": "rider64" },
+      { "type": "process", "name": "webstorm64" },
+      { "type": "process", "name": "Antigravity" } ] },
+    { "id": "media", "label": "Music & media (Spotify)", "category": "media", "match": [
+      { "type": "process", "name": "Spotify" },
+      { "type": "startup", "name": "Spotify" } ] },
+
+    { "id": "bitdefender", "label": "Bitdefender", "category": "security", "match": [
+      { "type": "process", "name": "bd*" },
+      { "type": "process", "name": "vsserv" },
+      { "type": "process", "name": "updatesrv" },
+      { "type": "process", "name": "ProductAgentService" },
+      { "type": "service", "name": "BD*" },
+      { "type": "service", "name": "bdredline*" },
+      { "type": "service", "name": "VSSERV" },
+      { "type": "service", "name": "UPDATESRV" },
+      { "type": "service", "name": "ProductAgentService" },
+      { "type": "startup", "name": "Bdagent" } ] },
+    { "id": "windows-security", "label": "Microsoft Defender / Windows Security", "category": "security", "match": [
+      { "type": "process", "name": "MsMpEng" },
+      { "type": "process", "name": "MpDefenderCoreService" },
+      { "type": "process", "name": "NisSrv" },
+      { "type": "service", "name": "MDCoreSvc" },
+      { "type": "service", "name": "WinDefend" },
+      { "type": "startup", "name": "SecurityHealth" } ] },
+    { "id": "other-antivirus", "label": "Other antivirus (Malwarebytes, Norton, Avast, ESET, Kaspersky)", "category": "security", "match": [
+      { "type": "process", "name": "MBAM*" },
+      { "type": "process", "name": "Norton*" },
+      { "type": "process", "name": "Avast*" },
+      { "type": "process", "name": "AvastUI" },
+      { "type": "process", "name": "ekrn" },
+      { "type": "process", "name": "egui" },
+      { "type": "process", "name": "avp*" } ] },
+
+    { "id": "asus", "label": "ASUS / ROG utilities", "category": "hardware", "match": [
+      { "type": "process", "name": "ArmouryCrate*" },
+      { "type": "process", "name": "Armoury*" },
+      { "type": "process", "name": "asus_*" },
+      { "type": "process", "name": "Asus*" },
+      { "type": "process", "name": "ROG*" },
+      { "type": "process", "name": "Aura*" },
+      { "type": "process", "name": "AacAmbient*" },
+      { "type": "process", "name": "AIFrameworkService" },
+      { "type": "process", "name": "GameSDK" },
+      { "type": "process", "name": "LightingService" },
+      { "type": "process", "name": "P508PowerAgent" },
+      { "type": "process", "name": "AcPowerNotification" },
+      { "type": "service", "name": "ArmouryCrate*" },
+      { "type": "service", "name": "Asus*" },
+      { "type": "service", "name": "Aura*" },
+      { "type": "service", "name": "ROG*" },
+      { "type": "service", "name": "AIFrameworkService" },
+      { "type": "service", "name": "GameSDK Service" },
+      { "type": "service", "name": "LightingService" },
+      { "type": "task", "name": "\\ASUS\\*" },
+      { "type": "startup", "name": "Virtual Pet" } ] },
+    { "id": "intel", "label": "Intel utilities", "category": "hardware", "match": [
+      { "type": "process", "name": "esrv*" },
+      { "type": "process", "name": "DSA*" },
+      { "type": "process", "name": "Intel*" },
+      { "type": "process", "name": "EnduranceGaming*" },
+      { "type": "process", "name": "PresentMon*" },
+      { "type": "process", "name": "SurSvc" },
+      { "type": "process", "name": "collector_service" },
+      { "type": "process", "name": "telemetry_agent" },
+      { "type": "service", "name": "ESRV_SVC*" },
+      { "type": "service", "name": "DSA*" },
+      { "type": "service", "name": "Intel*" },
+      { "type": "service", "name": "PresentMonSharedService" },
+      { "type": "service", "name": "SystemUsageReportSvc*" },
+      { "type": "startup", "name": "Intel*" } ] },
+    { "id": "nvidia-amd", "label": "NVIDIA / AMD / Realtek", "category": "hardware", "match": [
+      { "type": "process", "name": "nv*" },
+      { "type": "process", "name": "NVIDIA*" },
+      { "type": "process", "name": "RadeonSoftware" },
+      { "type": "process", "name": "Rtk*" },
+      { "type": "service", "name": "Nv*" },
+      { "type": "service", "name": "NVDisplay*" },
+      { "type": "task", "name": "\\NVIDIA*" },
+      { "type": "task", "name": "\\RtkAud*" } ] },
+    { "id": "peripherals", "label": "Peripherals (Logitech, Razer, Wacom, Samsung USB)", "category": "hardware", "match": [
+      { "type": "process", "name": "logioptionsplus*" },
+      { "type": "process", "name": "logi_*" },
+      { "type": "process", "name": "Razer*" },
+      { "type": "process", "name": "GameManagerService*" },
+      { "type": "process", "name": "Wacom*" },
+      { "type": "process", "name": "WTabletService*" },
+      { "type": "process", "name": "ss_conn_service*" },
+      { "type": "process", "name": "SAClient" },
+      { "type": "service", "name": "OptionsPlusUpdaterService" },
+      { "type": "service", "name": "Razer*" },
+      { "type": "service", "name": "WTabletService*" },
+      { "type": "service", "name": "ss_conn_service*" },
+      { "type": "startup", "name": "Logi*" },
+      { "type": "startup", "name": "RazerAppEngine" } ] },
+
+    { "id": "shells-runtimes", "label": "Shells & runtimes (ExamSafe runs in these)", "category": "system", "match": [
+      { "type": "process", "name": "powershell" },
+      { "type": "process", "name": "pwsh" },
+      { "type": "process", "name": "WindowsTerminal" },
+      { "type": "process", "name": "OpenConsole" },
+      { "type": "process", "name": "msedgewebview2" },
+      { "type": "process", "name": "crashpad_handler" } ] },
+    { "id": "windows-components", "label": "Windows / Microsoft components", "category": "system", "match": [
+      { "type": "process", "name": "WidgetBoard" },
+      { "type": "process", "name": "WidgetService" },
+      { "type": "process", "name": "MicrosoftStartFeedProvider" },
+      { "type": "process", "name": "GameInputRedistService" },
+      { "type": "process", "name": "GamingServices*" },
+      { "type": "process", "name": "OfficeClickToRun" },
+      { "type": "service", "name": "ClickToRunSvc" },
+      { "type": "service", "name": "GameInputRedistService" },
+      { "type": "service", "name": "GamingServices*" },
+      { "type": "task", "name": "\\SoftLanding\\*" },
+      { "type": "task", "name": "\\OneDrive Per-Machine Standalone Update Task" },
+      { "type": "task", "name": "\\OneDrive Reporting Task*" },
+      { "type": "task", "name": "\\GoogleUserPEH\\*" },
+      { "type": "task", "name": "\\GoogleSystem\\*" },
+      { "type": "task", "name": "\\MicrosoftEdgeUpdate*" } ] }
+  ]
+}
