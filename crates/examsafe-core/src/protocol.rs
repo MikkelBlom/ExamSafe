@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Component, Path};
 
 pub const PROTOCOL_VERSION: u32 = 1;
+/// First command-line argument that switches the ExamSafe executable into helper mode.
+pub const HELPER_MODE_FLAG: &str = "--helper";
 pub const RESPONSE_FILE_PREFIX: &str = "examsafe-helper-";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

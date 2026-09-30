@@ -268,8 +268,8 @@ What that means in practice:
   standalone `tray-icon` crate (native Win32 / AppKit / AppIndicator, no WebView).
 - **Windows APIs:** the `windows` crate (WMI, Service Control Manager, Task Scheduler COM,
   registry, IP helper for the TCP table, window display affinity).
-- **Elevated helper:** a second small Rust binary with an admin manifest, started via UAC only
-  when a fix/restore runs.
+- **Elevated helper:** the same exe relaunched through UAC in a UI-free helper mode, only when a
+  fix/restore runs (decided 2026-09-30: one portable exe instead of two files).
 - **Licensing note:** Slint is available under GPLv3 or a royalty-free licence for desktop apps
   (with attribution). Fine for now; check the terms before any public/commercial release.
 

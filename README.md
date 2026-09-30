@@ -12,9 +12,15 @@ are simulated until the detection engine is built.
 
 Requires Rust (stable, MSVC toolchain).
 
+Portable exe (recommended):
+
 ```bash
-cargo run -p examsafe-app
+pwsh ./tools/build-portable.ps1
 ```
+
+Then run `dist\ExamSafe.exe` - copy it anywhere, no installer needed.
+
+For development: `cargo run -p examsafe-app`.
 
 ## Quality gate
 

@@ -1045,6 +1045,7 @@ name = "examsafe-app"
 version = "0.1.0"
 dependencies = [
  "examsafe-core",
+ "examsafe-helper",
  "examsafe-platform",
  "slint",
  "slint-build",

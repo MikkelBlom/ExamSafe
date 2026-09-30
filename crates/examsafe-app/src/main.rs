@@ -12,6 +12,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Instant;
 
+use examsafe_core::protocol::HELPER_MODE_FLAG;
 use examsafe_platform::helper_client::{HelperClient, LaunchMode};
 use examsafe_platform::store::FileExamModeStore;
 use slint::ComponentHandle;
@@ -26,6 +27,13 @@ mod ui {
 use ui::{AppWindow, Phase, PlanItem, StepItem};
 
 fn main() -> ExitCode {
+    // Helper mode: the same exe relaunched with admin rights. Handled before anything else so
+    // the privileged process never creates a window, tray icon or UI state.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some(HELPER_MODE_FLAG) {
+        return ExitCode::from(examsafe_helper::run(&args[1..]));
+    }
+
     let started = Instant::now();
     match run(started) {
         Ok(()) => ExitCode::SUCCESS,
@@ -45,7 +53,7 @@ fn run(started: Instant) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         LaunchMode::Elevated
     };
-    let executor = Arc::new(HelperClient::next_to_current_exe(mode)?);
+    let executor = Arc::new(HelperClient::for_current_exe(mode)?);
     let store = Box::new(FileExamModeStore::in_app_data());
     let tray = tray::Tray::create()?;
 

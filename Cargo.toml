@@ -12,6 +12,7 @@ publish = false
 [workspace.dependencies]
 examsafe-core = { path = "crates/examsafe-core" }
 examsafe-platform = { path = "crates/examsafe-platform" }
+examsafe-helper = { path = "crates/examsafe-helper" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

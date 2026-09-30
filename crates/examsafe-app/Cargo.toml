@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 examsafe-core.workspace = true
 examsafe-platform.workspace = true
+examsafe-helper.workspace = true
 slint.workspace = true
 tray-icon.workspace = true
 

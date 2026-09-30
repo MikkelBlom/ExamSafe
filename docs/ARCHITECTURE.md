@@ -9,7 +9,8 @@
 flowchart TD
   App["examsafe-app<br/>Slint UI · tray · controller"] --> Platform
   App --> Core
-  Helper["examsafe-helper<br/>elevated, short-lived"] --> Platform
+  App --> Helper
+  Helper["examsafe-helper<br/>privileged mode, UI-free"] --> Platform
   Helper --> Core
   Platform["examsafe-platform<br/>OS adapters (Win32 now; macOS/Linux later)"] --> Core
   Core["examsafe-core<br/>pure domain: flow, protocol, records, ports"]
@@ -19,7 +20,7 @@ flowchart TD
 |---|---|---|---|
 | `examsafe-core` | Exam flow state machine, helper protocol, exam-mode record, **ports** (traits) | serde, thiserror | UI, OS APIs, other ExamSafe crates |
 | `examsafe-platform` | Implements the ports for the current OS: elevation, storage, helper client. **Only place with `unsafe`**, confined to `*_impl.rs` | core, `windows` | UI, app, helper |
-| `examsafe-helper` | Elevated process: one request in (command line), one response out, then exit | core, platform | UI |
+| `examsafe-helper` | Privileged mode (library): one request in (command line), one response out, then exit. The app exe runs it when started as `ExamSafe.exe --helper --request <hex>`, before any UI exists | core, platform | UI |
 | `examsafe-app` | Slint UI (`ui/*.slint`), tray, controller wiring flow ↔ UI ↔ adapters | everything above | — |
 
 Enforced in CI by [`tools/check-architecture.ps1`](../tools/check-architecture.ps1) (dependency
@@ -37,9 +38,11 @@ rules + `unsafe` exemptions) and by workspace lints (`unsafe_code = "deny"`,
   controller stops executing effects when one fails, so nothing changes before it is recorded.
 - **Presentation-only UI.** `.slint` files contain layout, styling and animation only. Tokens
   (colours, type, motion) live in `ui/theme.slint`; nothing else hard-codes a colour.
-- **Least privilege.** The app never runs as admin. Privileged work goes to `examsafe-helper` via
-  UAC; the request is passed on the command line (fixed at launch, cannot be swapped), the
-  response path is validated by the helper.
+- **Least privilege, one exe.** The app never runs as admin. For privileged work it relaunches
+  its own executable through UAC in helper mode (`--helper`), which is dispatched in `main` before
+  any window or tray exists. The request is passed on the command line (fixed at launch, cannot be
+  swapped); the response path is validated by the helper. One portable exe, and the UAC prompt
+  names ExamSafe itself.
 
 ## Testing
 
@@ -60,6 +63,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 pwsh ./tools/check-architecture.ps1
 ```
+
+## Portable build
+
+```bash
+pwsh ./tools/build-portable.ps1
+```
+
+Produces `dist/ExamSafe.exe`: a single self-contained exe (~9 MB), no installer. State lives in
+`%LOCALAPPDATA%\ExamSafe`, not next to the exe.
 
 ## Running
 

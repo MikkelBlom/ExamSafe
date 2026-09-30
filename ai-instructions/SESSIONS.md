@@ -26,3 +26,13 @@ hidden advanced sheet; native tray icon. Checks/fixes are simulated. Measured 24
 Slint-generated code fails strict clippy (isolated in `mod ui`). Real UAC path not clicked through
 by Claude (needs a human).
 **Next:** Mikkel tries the prototype incl. the UAC prompt; then the read-only detection engine.
+
+## 2026-09-30 (late) — Claude Code (desktop) — Portable single exe
+**Summary:** Mikkel's `cargo run` failed with "examsafe-helper.exe not found" (cargo run only
+builds the app binary). Fixed at the root: helper became a library; the app exe relaunches itself
+via UAC as `ExamSafe.exe --helper --request <hex>`, dispatched in `main` before any UI. Added
+`tools/build-portable.ps1` → `dist/ExamSafe.exe` (9.3 MB, gitignored). Verified helper mode from
+the portable exe (valid ping → response file, bad request → exit 2).
+**Issues:** UI click-through automation still flaky (synthetic clicks) — UI path to the helper
+verified only via the direct helper request, not by clicking.
+**Next:** Mikkel runs dist\ExamSafe.exe and accepts the UAC prompt once.

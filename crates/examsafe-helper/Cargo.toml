@@ -1,6 +1,6 @@
 [package]
 name = "examsafe-helper"
-description = "Elevated helper for ExamSafe: executes privileged actions requested by the app."
+description = "Privileged helper mode for ExamSafe (runs elevated, UI-free, one action then exit)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

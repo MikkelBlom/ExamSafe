@@ -1,28 +1,31 @@
-//! Elevated helper for ExamSafe.
+//! Privileged helper logic for ExamSafe.
 //!
-//! Started by the app (normally through a UAC prompt) with one hex-encoded request on its command
-//! line. It performs the action, writes a JSON response to the validated response path, and
-//! exits. It never runs in the background.
-
-use std::process::ExitCode;
+//! The ExamSafe executable relaunches itself with administrator rights as
+//! `examsafe.exe --helper --request <hex>`; `main` sees the flag and calls [`run`] *before* any UI
+//! is created. It performs one action, writes a JSON response to the validated response path,
+//! and the process exits. Nothing here ever runs in the background.
+//!
+//! Kept as its own crate (not inside the app) so the privileged code path stays small, UI-free
+//! and separately testable — enforced by `tools/check-architecture.ps1`.
 
 use examsafe_core::protocol::{
     HelperAction, HelperRequest, HelperResponse, PROTOCOL_VERSION, decode_request,
 };
 use examsafe_platform::elevation::is_elevated;
 
-fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match run(&args) {
-        Ok(()) => ExitCode::SUCCESS,
+/// Runs helper mode. `args` are the arguments after the helper-mode flag.
+/// Returns the process exit code: 0 on success, 2 on any failure (details on stderr).
+pub fn run(args: &[String]) -> u8 {
+    match handle(args) {
+        Ok(()) => 0,
         Err(message) => {
-            eprintln!("examsafe-helper: {message}");
-            ExitCode::from(2)
+            eprintln!("examsafe helper: {message}");
+            2
         }
     }
 }
 
-fn run(args: &[String]) -> Result<(), String> {
+fn handle(args: &[String]) -> Result<(), String> {
     let encoded = parse_args(args)?;
     let request = decode_request(encoded).map_err(|error| error.to_string())?;
     let response = execute(&request);
@@ -34,7 +37,7 @@ fn run(args: &[String]) -> Result<(), String> {
 fn parse_args(args: &[String]) -> Result<&str, String> {
     match args {
         [flag, value] if flag == "--request" => Ok(value),
-        _ => Err("usage: examsafe-helper --request <hex>".to_owned()),
+        _ => Err("usage: examsafe --helper --request <hex>".to_owned()),
     }
 }
 
@@ -74,6 +77,11 @@ mod tests {
         assert!(parse_args(&[]).is_err());
         assert!(parse_args(&["--other".to_owned(), "x".to_owned()]).is_err());
         assert!(parse_args(&["--request".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn bad_request_fails_with_exit_code_2() {
+        assert_eq!(run(&["--request".to_owned(), "zz".to_owned()]), 2);
     }
 
     #[test]
