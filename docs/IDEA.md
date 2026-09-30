@@ -295,6 +295,42 @@ flowchart LR
 
 The catalog, traits and profiles are **data files** (versioned, updatable without a new release).
 
+## 11b. Distribution & updates (designed now, built later)
+
+Goal: people download ExamSafe once; after that we can ship fixes, new features and new
+detections, and they get them automatically or with one click.
+
+**Two update channels, because they change at very different speeds:**
+
+| Channel | What | How often | How |
+|---|---|---|---|
+| **App updates** | The program itself | Occasionally | Signed installer + in-app updater |
+| **Catalog updates** | Known apps, traits, exam presets (data files) | Often — new AI tools appear weekly | Signed data bundle downloaded by the app, no reinstall |
+
+**App updates — proposed tooling:** [Velopack](https://velopack.io) (open-source installer +
+updater with a Rust SDK; per-user install without admin, delta updates, rollback, GitHub
+Releases / S3 as the source). Alternative: `cargo-packager` + its standalone updater.
+Pipeline: git tag → GitHub Actions builds + signs → publishes release → apps see it.
+
+**Rules specific to ExamSafe:**
+- **No background updater service.** Nothing may run during the exam. Update checks happen only
+  when the user opens ExamSafe.
+- **No updates while in exam mode.** Between "Make safe" and "Restore", updating is blocked, so
+  a restore journal is always read by the version that wrote it. The journal format is
+  versioned anyway.
+- **Everything signed:** Windows code signing (otherwise SmartScreen + antivirus will distrust a
+  tool that needs admin and stops services), and a separate ed25519 key that signs update
+  manifests and catalog bundles.
+- **Channels:** `stable` for users, `beta` for Mikkel.
+- **Privacy:** ExamSafe sees everything on the PC. Nothing is uploaded automatically; support
+  uses an explicit "Export diagnostic report" the user reviews and sends.
+
+**Gotchas to remember:**
+- The source repo is private → release files there are not downloadable by the public. Use a
+  separate public releases repo or a bucket (e.g. Cloudflare R2).
+- Code signing costs money (Azure Trusted Signing is roughly $10/month, OV certificates
+  ~$200–400/year); eligibility for individuals varies by country — verify before release.
+
 ## 12. Rough roadmap
 
 1. **Slint spike:** custom-styled window with one animated state change + native tray icon +
@@ -304,7 +340,8 @@ The catalog, traits and profiles are **data files** (versioned, updatable withou
 4. **Fix + journal + restore:** elevated helper, verification loop, crash-safe restore.
 5. **Browser/IDE/OS AI controls** via policies and settings.
 6. **Polish:** animations, onboarding, tray popover, "Ready → Close ExamSafe" flow.
-7. **Generalize:** bigger catalog, community presets per university, macOS, then Linux.
+7. **Distribution:** signed installer, in-app updater, catalog update channel, beta channel.
+8. **Generalize:** bigger catalog, community presets per university, macOS, then Linux.
 
 ## 13. Open decisions
 

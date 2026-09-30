@@ -12,4 +12,5 @@ in `docs/IDEA.md`.
 | Fix + journal + restore | Planned | Elevated helper, verify loop, crash-safe restore | – | Engine | – |
 | Browser/IDE/OS AI controls | Planned | Policies/settings for extensions and built-in AI | – | Fix | – |
 | Tray control | Planned | Tooltip status, left-click popover, right-click menu | – | Spike | – |
+| Distribution & updates | Planned | Signed installer, in-app updater (Velopack?), signed catalog updates, beta channel — see IDEA §11b | – | Fix + restore | – |
 | macOS / Linux | Planned | Platform adapters | – | Core stable | – |
