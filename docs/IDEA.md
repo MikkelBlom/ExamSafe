@@ -333,8 +333,9 @@ Pipeline: git tag → GitHub Actions builds + signs → publishes release → ap
 
 ## 12. Rough roadmap
 
-1. **Slint spike:** custom-styled window with one animated state change + native tray icon +
-   elevated helper handshake. Measure RAM/CPU/startup time. Validates the look before engine work.
+1. ✅ **Slint prototype (2026-09-30):** custom-styled UI, full simulated flow, native tray,
+   elevated helper handshake, CI + architecture guard. Measured 24.5 MB, ~0% idle CPU, 125 ms
+   startup. See `docs/ARCHITECTURE.md`.
 2. **Read-only engine:** Windows inventory + catalog + traits; advanced view. No changes to the PC yet.
 3. **Profiles + simple view:** exam presets, the one-glance verdict, ask & remember.
 4. **Fix + journal + restore:** elevated helper, verification loop, crash-safe restore.

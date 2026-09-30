@@ -9,9 +9,12 @@ later. Owner/baseline user: Mikkel (SDU student — Digital Exam + ExamMonitor).
 `docs/IDEA.md`.
 
 ## Current phase
-**Idea / design.** Do NOT write product code until Mikkel explicitly says to start building.
-Stack is decided: **Rust + Slint** (native, no Chromium/WebView wrapper — do not propose Tauri
-or Electron again).
+**Prototype built (2026-09-30).** Next stage is the read-only detection engine — confirm scope
+with Mikkel before starting each new stage. Stack is decided: **Rust + Slint** with the software
+renderer (native, no Chromium/WebView wrapper — do not propose Tauri or Electron again).
+Code architecture and quality gate: `docs/ARCHITECTURE.md` — keep it strict: layer rules are
+enforced by `tools/check-architecture.ps1`, clippy warnings are errors, domain logic lives in
+`examsafe-core` and is unit tested.
 
 ## Never violate
 1. Never "fire and forget" — every fix is re-verified; only a clean re-scan may say "exam safe".

@@ -1,0 +1,24 @@
+[package]
+name = "examsafe-app"
+description = "ExamSafe desktop app: Slint UI + tray icon."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "examsafe"
+path = "src/main.rs"
+
+[dependencies]
+examsafe-core.workspace = true
+examsafe-platform.workspace = true
+slint.workspace = true
+tray-icon.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true
+
+[lints]
+workspace = true

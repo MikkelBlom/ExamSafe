@@ -14,3 +14,15 @@ next launch Restore), default = turn off everything relevant, hidden advanced se
 per-item control. Timed auto-restore added to FUTURE_IDEAS. PowerShell prototype deleted.
 Private GitHub repo created (HTTPS).
 **Next:** Slint spike once Mikkel gives the go-ahead.
+
+## 2026-09-30 (evening) — Claude Code (desktop) — Slint prototype
+**Summary:** Built the prototype as the real foundation: Cargo workspace (core / platform / helper /
+app), strict lints, architecture guard, GitHub Actions CI. Core flow state machine with full unit
+tests; exam-mode record persisted before changes; elevated helper handshake (UAC, command-line
+request, validated response file); Slint UI with custom design system, animated simple view and
+hidden advanced sheet; native tray icon. Checks/fixes are simulated. Measured 24.5 MB / ~0% CPU /
+125 ms startup. Recorded licence intent (source-available, all rights reserved).
+**Issues:** Software renderer doesn't clip gradients to rounded corners (removed orb highlight).
+Slint-generated code fails strict clippy (isolated in `mod ui`). Real UAC path not clicked through
+by Claude (needs a human).
+**Next:** Mikkel tries the prototype incl. the UAC prompt; then the read-only detection engine.

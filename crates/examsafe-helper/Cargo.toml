@@ -1,0 +1,16 @@
+[package]
+name = "examsafe-helper"
+description = "Elevated helper for ExamSafe: executes privileged actions requested by the app."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+examsafe-core.workspace = true
+examsafe-platform.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

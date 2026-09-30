@@ -15,8 +15,31 @@
 - **Prototype:** early PowerShell prototype deleted (still in git history, commit 7a186ab).
 - **Repo:** private GitHub repo, HTTPS remote.
 
+- **Licence (later):** repo may become public but NOT open source — source-available, all rights
+  reserved ("look, don't use"). Decide exact licence text together with code signing. Constraint:
+  Slint must then be used under its **royalty-free licence** (not GPLv3, which would force the app
+  open); that licence requires Slint attribution (AboutSlint widget or notice) — add before any
+  public release.
+- **Quality bar:** strict architecture + healthy automated tests are requirements, not nice-to-haves.
+
 ## Open decisions
-- None blocking. Next step needs a go-ahead: the Slint spike (see docs/IDEA.md §12).
+- None blocking. Next stage (read-only detection engine) needs a go-ahead.
+
+## Prototype findings (2026-09-30)
+- **Measured** (release build, Mikkel's PC, `tools/measure.ps1`): 24.5 MB working set, 7.4 MB
+  private, ~0.02 % CPU idle with window open, 0 % tray-only, 1 process, 5 threads, 125 ms to
+  window. Busy-state animation CPU not yet measured.
+- Hidden window keeps its memory (window is hidden, not destroyed). Fine at this size.
+- **Software renderer gotcha:** gradients are not clipped to `border-radius` (a gradient highlight
+  on the orb rendered as a square). Use solid colours on rounded shapes.
+- Icons use the **Segoe Fluent Icons** font (Windows 11 only). For macOS/Linux or Windows 10,
+  switch to bundled SVG/Path icons — to be verified with the software renderer.
+- Slint-generated code triggers our strict clippy lints; it is wrapped in `mod ui` with lints
+  allowed. Don't loosen the workspace lints instead.
+- Synthetic mouse clicks (SetCursorPos + mouse_event) sometimes land on the previous cursor
+  position — use the Slint testing backend for automated UI tests instead.
+- Real UAC path (elevated helper) compiled and wired but only exercised in `Direct` mode by
+  Claude, since the UAC prompt needs a human. Mikkel should click through it once.
 
 ## Research findings
 - **ExamMonitor (SDU)** logs running processes (name + description), browser URLs, network
