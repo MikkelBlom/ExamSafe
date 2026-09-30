@@ -41,6 +41,14 @@
   7a186ab) holds ~60 app rules (process/service/task/startup/port footprints) — reuse as the
   starting catalog when building the engine.
 
+- **Slint vs Tauri 2 resources (web research, not yet measured here):** Tauri idle is usually
+  quoted at 30–80 MB, but that often counts only the main process; WebView2 spawns several
+  msedgewebview2 processes and the real total is higher (tauri issue #5889). Slint with the
+  software renderer is about 30–40 MB flat. Slint's GPU/Skia renderer has shown 200–440 MB on
+  Windows (slint issue #13470), so **use the software renderer by default**. Tauri's tray is built on
+  the same `tray-icon` crate we would use with Slint, so tray support doesn't favour either one.
+  Plan: measure both on Mikkel's PC during the spike.
+
 ## Architecture decisions
 - UI unprivileged; admin changes via an elevated helper executing a journaled plan. (Least
   privilege, and one UAC prompt per fix.)
