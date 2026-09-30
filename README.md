@@ -2,8 +2,8 @@
 
 One click to make your PC exam-safe, and one click to put everything back afterwards.
 
-**Status:** prototype. The UI, tray, exam flow and admin helper are real; the checks and fixes
-are simulated until the detection engine is built.
+**Status:** early version. Closing and reopening **apps** is real and tested end to end.
+Services, scheduled tasks, startup items and browser extensions are not handled yet.
 
 - Product design: [docs/IDEA.md](docs/IDEA.md)
 - Code architecture and testing: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -29,6 +29,7 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 pwsh ./tools/check-architecture.ps1
+pwsh ./tools/e2e-charmap.ps1   # real exe vs a real app (after cargo build --release)
 ```
 
 © 2026 Mikkel Blom. All rights reserved.

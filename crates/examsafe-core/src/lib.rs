@@ -5,8 +5,10 @@
 //! - talks to the outside world only through the traits in [`ports`], which the
 //!   `examsafe-platform` crate implements.
 
+pub mod apps;
 pub mod exam_mode;
 pub mod flow;
 pub mod ports;
 pub mod protocol;
+pub mod service;
 pub mod steps;

@@ -36,3 +36,19 @@ the portable exe (valid ping → response file, bad request → exit 2).
 **Issues:** UI click-through automation still flaky (synthetic clicks) — UI path to the helper
 verified only via the direct helper request, not by clicking.
 **Next:** Mikkel runs dist\ExamSafe.exe and accepts the UAC prompt once.
+
+## 2026-09-30 (night) — Claude Code (desktop) — Real app closing (after trust failure)
+**Summary:** Mikkel ran the prototype: it said "Everything is ready" but closed nothing (checks and
+fixes were simulated; only the report said so). That violated invariant #1. Made the app loop real:
+`catalog/apps.json` (36 apps), matching, confirm step (lists apps, nothing closes before yes),
+polite close (WM_CLOSE) → 4 s grace → force close, real re-verify (retry, then fail naming the
+app), journal v2 with relaunch targets (path or Store app id), restore via explorer.exe (runs as
+the normal user). Same service drives the window and `ExamSafe.exe --cli`. UI texts now claim
+only what is true, plus a visible scope note. Tests: 46 core (incl. full flow against a fake OS),
+real-process platform tests, `tools/e2e-charmap.ps1` (real exe closes/reopens Character Map),
+and a full click-through of the window with screenshots.
+**Issues:** Terminating an already-exited process returns ACCESS_DENIED (fixed: counts as closed).
+Renamed system exes in %TEMP% are blocked (Bitdefender) — e2e uses the original charmap.exe.
+Advanced list spread its texts apart when short (fixed). Mikkel's real journal still holds a v1
+prototype record → first launch shows "Exam mode is on" with nothing to reopen; Restore clears it.
+**Next:** Antigravity test with Mikkel's permission (it was open); then services/tasks/startup.

@@ -6,6 +6,8 @@
 pub mod elevation;
 pub mod helper_client;
 pub mod paths;
+#[cfg(windows)]
+pub mod processes;
 pub mod store;
 
 #[cfg(windows)]

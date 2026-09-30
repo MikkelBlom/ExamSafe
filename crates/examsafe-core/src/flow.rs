@@ -11,6 +11,8 @@ pub const MAX_FIX_ATTEMPTS: u8 = 2;
 pub enum Phase {
     Idle,
     Checking,
+    /// Apps were found; waiting for the user to agree to close them (unsaved work!).
+    Confirm,
     Fixing,
     Verifying,
     Ready,
@@ -45,6 +47,8 @@ pub enum Event {
     },
     /// The single big button was pressed (its meaning depends on the phase).
     PrimaryPressed,
+    /// The small secondary action: Cancel on the confirm step, Restore on a failure.
+    SecondaryPressed,
     ChecksCompleted {
         issues: usize,
     },
@@ -52,11 +56,16 @@ pub enum Event {
     FixFailed {
         reason: String,
     },
+    /// `remaining` names the selected apps that are still (or again) running.
     VerifyCompleted {
-        clean: bool,
+        remaining: Vec<String>,
     },
     RestoreCompleted,
     RestoreFailed {
+        reason: String,
+    },
+    /// Any work step failed unexpectedly (e.g. programs could not be listed).
+    Failed {
         reason: String,
     },
 }
@@ -145,24 +154,30 @@ impl Flow {
                     self.phase = P::Verifying;
                     vec![Effect::RunVerify]
                 } else {
-                    self.begin_fix()
+                    // Never close apps without asking: they may hold unsaved work.
+                    self.phase = P::Confirm;
+                    Vec::new()
                 }
+            }
+            (P::Confirm, Event::PrimaryPressed) => self.begin_fix(),
+            (P::Confirm, Event::SecondaryPressed) => {
+                self.phase = P::Idle;
+                Vec::new()
             }
             (P::Fixing, Event::FixCompleted) => {
                 self.phase = P::Verifying;
                 vec![Effect::RunVerify]
             }
             (P::Fixing, Event::FixFailed { reason }) => self.fail(reason, Retry::Fix),
-            (P::Verifying, Event::VerifyCompleted { clean: true }) => {
-                self.phase = P::Ready;
-                Vec::new()
-            }
-            (P::Verifying, Event::VerifyCompleted { clean: false }) => {
-                if self.fix_attempts < MAX_FIX_ATTEMPTS {
+            (P::Verifying, Event::VerifyCompleted { remaining }) => {
+                if remaining.is_empty() {
+                    self.phase = P::Ready;
+                    Vec::new()
+                } else if self.fix_attempts < MAX_FIX_ATTEMPTS {
                     self.begin_fix()
                 } else {
                     self.fail(
-                        "Some items keep turning themselves back on.".to_owned(),
+                        format!("Still running after closing: {}.", remaining.join(", ")),
                         Retry::Fix,
                     )
                 }
@@ -188,6 +203,15 @@ impl Flow {
                 }
                 Retry::Restore => self.start_restore(),
             },
+            (P::Checking, Event::Failed { reason }) => self.fail(reason, Retry::Check),
+            (P::Fixing | P::Verifying, Event::Failed { reason }) => self.fail(reason, Retry::Fix),
+            (P::Restoring, Event::Failed { reason }) => self.fail(reason, Retry::Restore),
+            // Give up on the attempt: put back whatever was already changed.
+            (P::Failed, Event::SecondaryPressed) if self.exam_mode_active => self.start_restore(),
+            (P::Failed, Event::SecondaryPressed) => {
+                self.phase = P::Idle;
+                Vec::new()
+            }
             (phase, _) => {
                 return Err(FlowError {
                     phase,
@@ -273,18 +297,56 @@ mod tests {
         assert_eq!(flow.phase(), Phase::Checking);
     }
 
+    fn clean() -> Event {
+        Event::VerifyCompleted {
+            remaining: Vec::new(),
+        }
+    }
+
+    fn dirty() -> Event {
+        Event::VerifyCompleted {
+            remaining: vec!["Slack".into()],
+        }
+    }
+
+    /// Idle -> checks found 3 apps -> waiting for confirmation.
+    fn confirming() -> Flow {
+        flow_in(&[
+            launched(false),
+            Event::PrimaryPressed,
+            Event::ChecksCompleted { issues: 3 },
+        ])
+    }
+
     #[test]
-    fn issues_found_persists_exam_mode_before_fixing() {
+    fn found_apps_wait_for_confirmation_and_change_nothing() {
         let mut flow = flow_in(&[launched(false), Event::PrimaryPressed]);
-        let effects = flow.handle(Event::ChecksCompleted { issues: 7 }).unwrap();
+        let effects = flow.handle(Event::ChecksCompleted { issues: 3 }).unwrap();
+        assert!(effects.is_empty());
+        assert_eq!(flow.phase(), Phase::Confirm);
+        assert!(!flow.exam_mode_active());
+    }
+
+    #[test]
+    fn confirming_persists_exam_mode_before_fixing() {
+        let mut flow = confirming();
+        let effects = flow.handle(Event::PrimaryPressed).unwrap();
         assert_eq!(effects, vec![Effect::BeginExamMode, Effect::RunFix]);
         assert_eq!(flow.phase(), Phase::Fixing);
-        assert_eq!(flow.issues(), 7);
+        assert_eq!(flow.issues(), 3);
         assert!(flow.exam_mode_active());
     }
 
     #[test]
-    fn no_issues_skips_fix_and_verifies() {
+    fn cancelling_the_confirmation_changes_nothing() {
+        let mut flow = confirming();
+        assert!(flow.handle(Event::SecondaryPressed).unwrap().is_empty());
+        assert_eq!(flow.phase(), Phase::Idle);
+        assert!(!flow.exam_mode_active());
+    }
+
+    #[test]
+    fn no_issues_skips_confirm_and_fix() {
         let mut flow = flow_in(&[launched(false), Event::PrimaryPressed]);
         let effects = flow.handle(Event::ChecksCompleted { issues: 0 }).unwrap();
         assert_eq!(effects, vec![Effect::RunVerify]);
@@ -293,13 +355,10 @@ mod tests {
 
     #[test]
     fn happy_path_ends_in_ready_then_quit() {
-        let mut flow = flow_in(&[
-            launched(false),
-            Event::PrimaryPressed,
-            Event::ChecksCompleted { issues: 3 },
-            Event::FixCompleted,
-            Event::VerifyCompleted { clean: true },
-        ]);
+        let mut flow = confirming();
+        for event in [Event::PrimaryPressed, Event::FixCompleted, clean()] {
+            flow.handle(event).unwrap();
+        }
         assert_eq!(flow.phase(), Phase::Ready);
         assert_eq!(
             flow.handle(Event::PrimaryPressed).unwrap(),
@@ -308,36 +367,28 @@ mod tests {
     }
 
     #[test]
-    fn dirty_verify_retries_fix_without_persisting_twice() {
-        let mut flow = flow_in(&[
-            launched(false),
-            Event::PrimaryPressed,
-            Event::ChecksCompleted { issues: 3 },
-            Event::FixCompleted,
-        ]);
-        let effects = flow
-            .handle(Event::VerifyCompleted { clean: false })
-            .unwrap();
-        assert_eq!(effects, vec![Effect::RunFix]);
+    fn app_that_came_back_is_closed_again_without_asking_twice() {
+        let mut flow = confirming();
+        flow.handle(Event::PrimaryPressed).unwrap();
+        flow.handle(Event::FixCompleted).unwrap();
+        assert_eq!(flow.handle(dirty()).unwrap(), vec![Effect::RunFix]);
         assert_eq!(flow.phase(), Phase::Fixing);
     }
 
     #[test]
-    fn repeated_dirty_verify_fails_with_fix_retry() {
-        let mut flow = flow_in(&[
-            launched(false),
+    fn app_that_keeps_coming_back_fails_with_its_name() {
+        let mut flow = confirming();
+        for event in [
             Event::PrimaryPressed,
-            Event::ChecksCompleted { issues: 3 },
             Event::FixCompleted,
-            Event::VerifyCompleted { clean: false },
+            dirty(),
             Event::FixCompleted,
-        ]);
-        let effects = flow
-            .handle(Event::VerifyCompleted { clean: false })
-            .unwrap();
-        assert!(effects.is_empty());
+        ] {
+            flow.handle(event).unwrap();
+        }
+        assert!(flow.handle(dirty()).unwrap().is_empty());
         assert_eq!(flow.phase(), Phase::Failed);
-        assert!(flow.failure().is_some());
+        assert!(flow.failure().unwrap().contains("Slack"));
         // Exam mode stays on: whatever was changed must still be restorable.
         assert!(flow.exam_mode_active());
         assert_eq!(
@@ -347,18 +398,30 @@ mod tests {
     }
 
     #[test]
+    fn after_a_failed_fix_the_user_can_restore_instead() {
+        let mut flow = confirming();
+        flow.handle(Event::PrimaryPressed).unwrap();
+        flow.handle(Event::FixFailed {
+            reason: "access denied".into(),
+        })
+        .unwrap();
+        assert_eq!(flow.phase(), Phase::Failed);
+        assert_eq!(flow.failure(), Some("access denied"));
+        assert_eq!(
+            flow.handle(Event::SecondaryPressed).unwrap(),
+            vec![Effect::RunRestore]
+        );
+        assert_eq!(flow.phase(), Phase::Restoring);
+    }
+
+    #[test]
     fn fix_failure_keeps_exam_mode_and_retries_fix() {
-        let mut flow = flow_in(&[
-            launched(false),
-            Event::PrimaryPressed,
-            Event::ChecksCompleted { issues: 2 },
-        ]);
+        let mut flow = confirming();
+        flow.handle(Event::PrimaryPressed).unwrap();
         flow.handle(Event::FixFailed {
             reason: "declined".into(),
         })
         .unwrap();
-        assert_eq!(flow.phase(), Phase::Failed);
-        assert_eq!(flow.failure(), Some("declined"));
         assert!(flow.exam_mode_active());
         assert_eq!(
             flow.handle(Event::PrimaryPressed).unwrap(),
@@ -387,7 +450,7 @@ mod tests {
     fn failed_restore_keeps_exam_mode_and_retries_restore() {
         let mut flow = flow_in(&[launched(true), Event::PrimaryPressed]);
         flow.handle(Event::RestoreFailed {
-            reason: "service missing".into(),
+            reason: "not found".into(),
         })
         .unwrap();
         assert!(flow.exam_mode_active());
@@ -410,12 +473,38 @@ mod tests {
         let mut flow = flow_in(&[launched(false)]);
         assert!(flow.handle(Event::FixCompleted).is_err());
         assert!(flow.handle(Event::RestoreCompleted).is_err());
+        assert!(flow.handle(Event::SecondaryPressed).is_err());
+    }
+
+    #[test]
+    fn unexpected_failures_retry_the_right_step() {
+        let mut checking = flow_in(&[launched(false), Event::PrimaryPressed]);
+        checking
+            .handle(Event::Failed { reason: "x".into() })
+            .unwrap();
+        assert_eq!(
+            checking.handle(Event::PrimaryPressed).unwrap(),
+            vec![Effect::RunChecks]
+        );
+
+        let mut restoring = flow_in(&[launched(true), Event::PrimaryPressed]);
+        restoring
+            .handle(Event::Failed { reason: "x".into() })
+            .unwrap();
+        assert_eq!(
+            restoring.handle(Event::PrimaryPressed).unwrap(),
+            vec![Effect::RunRestore]
+        );
+
+        let mut idle = flow_in(&[launched(false)]);
+        assert!(idle.handle(Event::Failed { reason: "x".into() }).is_err());
     }
 
     #[test]
     fn busy_phases() {
         assert!(Phase::Checking.is_busy());
         assert!(Phase::Restoring.is_busy());
+        assert!(!Phase::Confirm.is_busy());
         assert!(!Phase::Ready.is_busy());
         assert!(!Phase::ExamMode.is_busy());
     }

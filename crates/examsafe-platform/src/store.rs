@@ -17,8 +17,11 @@ impl FileExamModeStore {
         Self { path: path.into() }
     }
 
+    /// `%LOCALAPPDATA%\ExamSafe\exam-mode.json`, or `$EXAMSAFE_STATE_DIR\exam-mode.json` when
+    /// that variable is set (used by tests so they never touch the real record).
     pub fn in_app_data() -> Self {
-        Self::new(app_data_dir().join("exam-mode.json"))
+        let dir = std::env::var_os("EXAMSAFE_STATE_DIR").map_or_else(app_data_dir, PathBuf::from);
+        Self::new(dir.join("exam-mode.json"))
     }
 
     pub fn path(&self) -> &Path {
@@ -81,7 +84,7 @@ mod tests {
     #[test]
     fn save_load_clear_round_trip() {
         let store = temp_store();
-        let record = ExamModeRecord::new(1_790_000_000, 4);
+        let record = ExamModeRecord::new(1_790_000_000);
         store.save(&record).unwrap();
         assert_eq!(store.load().unwrap(), Some(record));
         store.clear().unwrap();

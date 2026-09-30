@@ -1,6 +1,6 @@
 // Main window: the one-click simple view, with the advanced view as a sheet that slides in.
 import { Theme, Icons } from "theme.slint";
-import { Phase, StepItem, PlanItem, PrimaryButton, LinkButton, StatusOrb, StepList, PlanRow } from "components.slint";
+import { Phase, StepItem, PlanItem, PrimaryButton, LinkButton, StatusOrb, StepList, PlanRow, AppList } from "components.slint";
 
 export { Phase, StepItem, PlanItem }
 
@@ -17,23 +17,31 @@ export component AppWindow inherits Window {
     in property <string> profile-name: "SDU Digital Exam · closed book";
     in property <int> issue-count: 0;
     in property <string> failure-reason;
-    in property <string> helper-status: "Not used yet";
+    in property <bool> exam-mode-active: false;
+    // Apps shown on the confirm screen (will close) and in exam mode (will reopen).
+    in property <[string]> app-names;
     in property <[StepItem]> steps;
     in property <[PlanItem]> plan-items;
     in-out property <bool> advanced-open: false;
 
     callback primary-action();
+    callback secondary-action();
     callback plan-item-toggled(int, bool);
+
+    // What this version really covers. Shown wherever the app could otherwise over-promise.
+    out property <string> scope-note: "This version closes apps. Services, scheduled tasks, startup items and browser extensions are not handled yet.";
 
     property <bool> busy: root.phase == Phase.checking || root.phase == Phase.fixing
         || root.phase == Phase.verifying || root.phase == Phase.restoring;
+    property <bool> shows-apps: (root.phase == Phase.confirm || root.phase == Phase.exam-mode) && root.app-names.length > 0;
 
     pure function headline() -> string {
         if (root.phase == Phase.idle) { return "Ready when you are"; }
         if (root.phase == Phase.checking) { return "Checking your PC"; }
-        if (root.phase == Phase.fixing) { return "Making it exam-safe"; }
+        if (root.phase == Phase.confirm) { return root.issue-count == 1 ? "Close 1 app?" : "Close \{root.issue-count} apps?"; }
+        if (root.phase == Phase.fixing) { return "Closing apps"; }
         if (root.phase == Phase.verifying) { return "Double-checking"; }
-        if (root.phase == Phase.ready) { return "Everything is ready"; }
+        if (root.phase == Phase.ready) { return root.issue-count == 0 ? "Nothing to close" : "Apps are closed"; }
         if (root.phase == Phase.exam-mode) { return "Exam mode is on"; }
         if (root.phase == Phase.restoring) { return "Restoring your PC"; }
         if (root.phase == Phase.restored) { return "Back to normal"; }
@@ -41,19 +49,23 @@ export component AppWindow inherits Window {
     }
 
     pure function subline() -> string {
-        if (root.phase == Phase.idle) { return "One click turns off everything your exam doesn't allow, and puts it all back afterwards."; }
-        if (root.phase == Phase.checking) { return "Looking at apps, services, tasks, startup items, network and browsers."; }
-        if (root.phase == Phase.fixing) { return "Turning off \{root.issue-count} things. Everything is recorded so it can be put back."; }
+        if (root.phase == Phase.idle) { return "Closes the apps your exam doesn't allow, checks they stay closed, and reopens them afterwards."; }
+        if (root.phase == Phase.checking) { return "Looking for apps your exam doesn't allow."; }
+        if (root.phase == Phase.confirm) { return "Save your work in these apps first. They close now and reopen when you restore."; }
+        if (root.phase == Phase.fixing) { return "Asking apps to close. Anything that doesn't respond is closed after a few seconds."; }
         if (root.phase == Phase.verifying) { return "Scanning again to prove nothing came back."; }
-        if (root.phase == Phase.ready) { return "Close ExamSafe now. After your exam, open it again to restore everything."; }
+        if (root.phase == Phase.ready && root.issue-count == 0) { return "None of the apps on the exam list are running. Close ExamSafe before your exam."; }
+        if (root.phase == Phase.ready) { return "Checked again: none of them came back. Close ExamSafe now, and open it after your exam to reopen your apps."; }
+        if (root.phase == Phase.exam-mode && root.app-names.length > 0) { return "When your exam is over, these apps will be reopened:"; }
         if (root.phase == Phase.exam-mode) { return "Your PC is still set up for an exam. Restore it when you're done."; }
-        if (root.phase == Phase.restoring) { return "Turning your apps and services back on."; }
-        if (root.phase == Phase.restored) { return "Everything that was on before is on again."; }
+        if (root.phase == Phase.restoring) { return "Reopening your apps."; }
+        if (root.phase == Phase.restored) { return "Everything ExamSafe closed has been reopened."; }
         return root.failure-reason;
     }
 
     pure function primary-label() -> string {
         if (root.busy) { return "Working…"; }
+        if (root.phase == Phase.confirm) { return "Close apps"; }
         if (root.phase == Phase.ready) { return "Close ExamSafe"; }
         if (root.phase == Phase.exam-mode) { return "Restore my PC"; }
         if (root.phase == Phase.restored) { return "Done"; }
@@ -65,6 +77,13 @@ export component AppWindow inherits Window {
         if (root.phase == Phase.ready || root.phase == Phase.restored) { return Theme.success; }
         if (root.phase == Phase.exam-mode) { return Theme.exam; }
         return Theme.accent;
+    }
+
+    // The small link under the button: a real choice where one exists, otherwise Advanced.
+    pure function secondary-label() -> string {
+        if (root.phase == Phase.confirm) { return "Cancel"; }
+        if (root.phase == Phase.failed && root.exam-mode-active) { return "Restore my PC instead"; }
+        return "Advanced";
     }
 
     // ----- Simple view -------------------------------------------------------------------
@@ -111,10 +130,10 @@ export component AppWindow inherits Window {
 
             HorizontalLayout {
                 alignment: center;
-                StatusOrb { phase: root.phase; }
+                StatusOrb { phase: root.phase == Phase.confirm ? Phase.idle : root.phase; }
             }
 
-            Rectangle { height: 26px; }
+            Rectangle { height: 24px; }
 
             Text {
                 text: root.headline();
@@ -135,19 +154,44 @@ export component AppWindow inherits Window {
                 wrap: word-wrap;
             }
 
-            Rectangle { height: 22px; }
+            Rectangle { height: 18px; }
 
-            // Fixed height so the layout never jumps when steps appear or disappear.
+            // Fixed height so the layout never jumps between states.
             Rectangle {
                 height: 196px;
-                opacity: root.busy ? 1 : 0;
-                animate opacity { duration: Theme.medium; }
-                HorizontalLayout {
-                    alignment: center;
-                    StepList {
-                        width: 250px;
-                        steps: root.steps;
+
+                Rectangle {
+                    opacity: root.busy ? 1 : 0;
+                    animate opacity { duration: Theme.medium; }
+                    HorizontalLayout {
+                        alignment: center;
+                        StepList {
+                            width: 290px;
+                            steps: root.steps;
+                        }
                     }
+                }
+
+                AppList {
+                    x: 16px;
+                    y: 0px;
+                    width: parent.width - 32px;
+                    height: min(parent.height, self.names.length * 30px + 26px);
+                    names: root.app-names;
+                    visible: root.shows-apps;
+                }
+
+                Text {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    height: parent.height;
+                    vertical-alignment: bottom;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                    text: root.scope-note;
+                    font-size: 12px;
+                    color: Theme.text-tertiary;
+                    visible: root.phase == Phase.idle || root.phase == Phase.ready;
                 }
             }
 
@@ -165,8 +209,14 @@ export component AppWindow inherits Window {
             HorizontalLayout {
                 alignment: center;
                 LinkButton {
-                    text: "Advanced";
-                    clicked => { root.advanced-open = true; }
+                    text: root.secondary-label();
+                    clicked => {
+                        if (root.secondary-label() == "Advanced") {
+                            root.advanced-open = true;
+                        } else {
+                            root.secondary-action();
+                        }
+                    }
                 }
             }
         }
@@ -204,44 +254,41 @@ export component AppWindow inherits Window {
             }
 
             Text {
-                text: "Exactly what ExamSafe turns off for this exam. Switch an item off to leave it alone. Prototype: sample data.";
+                text: root.plan-items.length == 0
+                    ? "None of the apps on the exam list are running right now."
+                    : "Apps on the exam list that are running right now. Switch one off to leave it open.";
                 font-size: 13px;
                 color: Theme.text-secondary;
                 wrap: word-wrap;
             }
 
-            Flickable {
+            // A plain Rectangle takes all spare height (a Flickable alone won't grow past its
+            // content, which spread the texts above apart when the list was short).
+            Rectangle {
                 vertical-stretch: 1;
-                content-width: self.width;
-                content-height: plan-list.preferred-height;
-                plan-list := VerticalLayout {
+                Flickable {
                     width: parent.width;
-                    spacing: 8px;
-                    for item[index] in root.plan-items: PlanRow {
-                        item: item;
-                        toggled(value) => { root.plan-item-toggled(index, value); }
+                    height: parent.height;
+                    content-width: self.width;
+                    content-height: plan-list.preferred-height;
+                    plan-list := VerticalLayout {
+                        width: parent.width;
+                        spacing: 8px;
+                        for item[index] in root.plan-items: PlanRow {
+                            item: item;
+                            toggled(value) => { root.plan-item-toggled(index, value); }
+                        }
                     }
                 }
             }
 
             Rectangle { height: 1px; background: Theme.border; }
 
-            HorizontalLayout {
-                spacing: 8px;
-                Text {
-                    text: "Admin helper";
-                    font-size: 12px;
-                    font-weight: 600;
-                    color: Theme.text-secondary;
-                }
-                Text {
-                    text: root.helper-status;
-                    font-size: 12px;
-                    color: Theme.text-secondary;
-                    horizontal-alignment: right;
-                    horizontal-stretch: 1;
-                    overflow: elide;
-                }
+            Text {
+                text: root.scope-note;
+                font-size: 12px;
+                color: Theme.text-tertiary;
+                wrap: word-wrap;
             }
         }
     }

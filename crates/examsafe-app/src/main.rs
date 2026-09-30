@@ -1,19 +1,22 @@
 //! ExamSafe desktop app.
 //!
 //! Layering: `ui/*.slint` is presentation only; [`controller`] drives the pure state machine from
-//! `examsafe-core` and executes its effects through `examsafe-platform` adapters.
+//! `examsafe-core` and executes its effects through `examsafe_core::service::ExamService`, whose
+//! ports are implemented by `examsafe-platform`. [`cli`] drives the same flow without a window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cli;
 mod controller;
-mod sample_plan;
 mod tray;
 
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Instant;
 
+use examsafe_core::apps::Catalog;
 use examsafe_core::protocol::HELPER_MODE_FLAG;
-use examsafe_platform::helper_client::{HelperClient, LaunchMode};
+use examsafe_core::service::{DEFAULT_GRACE, ExamService};
+use examsafe_platform::processes::{WindowsProcessControl, attach_parent_console};
 use examsafe_platform::store::FileExamModeStore;
 use slint::ComponentHandle;
 
@@ -26,16 +29,37 @@ mod ui {
 }
 use ui::{AppWindow, Phase, PlanItem, StepItem};
 
+/// The app catalog shipped inside the exe. `EXAMSAFE_CATALOG=<path>` overrides it (used by tests
+/// and for trying out new entries without rebuilding).
+const DEFAULT_CATALOG: &str = include_str!("../../../catalog/apps.json");
+
 fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mode = args.first().map(String::as_str);
+
     // Helper mode: the same exe relaunched with admin rights. Handled before anything else so
     // the privileged process never creates a window, tray icon or UI state.
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.first().map(String::as_str) == Some(HELPER_MODE_FLAG) {
+    if mode == Some(HELPER_MODE_FLAG) {
         return ExitCode::from(examsafe_helper::run(&args[1..]));
+    }
+    if mode == Some("--cli") {
+        attach_parent_console();
+    }
+
+    let service = match build_service() {
+        Ok(service) => Arc::new(service),
+        Err(error) => {
+            eprintln!("examsafe: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if mode == Some("--cli") {
+        return ExitCode::from(cli::run(&args[1..], &service));
     }
 
     let started = Instant::now();
-    match run(started) {
+    match run_window(service, started) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("examsafe: {error}");
@@ -44,20 +68,30 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(started: Instant) -> Result<(), Box<dyn std::error::Error>> {
-    let ui = AppWindow::new()?;
-
-    // EXAMSAFE_NO_ELEVATE=1 skips the UAC prompt while developing the UI.
-    let mode = if std::env::var_os("EXAMSAFE_NO_ELEVATE").is_some() {
-        LaunchMode::Direct
-    } else {
-        LaunchMode::Elevated
+fn build_service() -> Result<ExamService, Box<dyn std::error::Error>> {
+    let catalog_json = match std::env::var_os("EXAMSAFE_CATALOG") {
+        Some(path) => std::fs::read_to_string(&path)
+            .map_err(|error| format!("could not read EXAMSAFE_CATALOG {path:?}: {error}"))?,
+        None => DEFAULT_CATALOG.to_owned(),
     };
-    let executor = Arc::new(HelperClient::for_current_exe(mode)?);
-    let store = Box::new(FileExamModeStore::in_app_data());
+    let catalog = Catalog::from_json(&catalog_json)?;
+    Ok(ExamService::new(
+        Arc::new(WindowsProcessControl),
+        Arc::new(FileExamModeStore::in_app_data()),
+        Arc::new(catalog),
+        std::process::id(),
+        DEFAULT_GRACE,
+    ))
+}
+
+fn run_window(
+    service: Arc<ExamService>,
+    started: Instant,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let ui = AppWindow::new()?;
     let tray = tray::Tray::create()?;
 
-    let controller = Controller::new(&ui, store, executor, tray);
+    let controller = Controller::new(&ui, service, tray);
     controller::install(&controller);
     controller.start();
 

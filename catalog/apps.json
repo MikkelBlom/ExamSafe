@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "notes": "Apps ExamSafe closes for an exam. 'processes' are executable names (without .exe), case-insensitive; a trailing * matches a prefix. 'relaunch': reopen the app on restore. Services, scheduled tasks and startup items are handled separately (not yet implemented).",
+  "entries": [
+    { "id": "claude", "name": "Claude", "category": "AI", "processes": ["claude", "cowork-svc"] },
+    { "id": "chatgpt", "name": "ChatGPT", "category": "AI", "processes": ["ChatGPT"] },
+    { "id": "codex", "name": "Codex", "category": "AI", "processes": ["Codex"] },
+    { "id": "copilot", "name": "Microsoft Copilot", "category": "AI", "processes": ["mscopilot", "Copilot", "M365Copilot"] },
+    { "id": "wispr-flow", "name": "Wispr Flow", "category": "AI", "processes": ["Wispr Flow", "Wispr Flow Helper"] },
+    { "id": "ollama", "name": "Ollama", "category": "AI", "processes": ["ollama app", "ollama"] },
+    { "id": "lm-studio", "name": "LM Studio", "category": "AI", "processes": ["LM Studio", "lms"] },
+    { "id": "gpt4all", "name": "GPT4All", "category": "AI", "processes": ["gpt4all*", "chat"] },
+    { "id": "jan", "name": "Jan", "category": "AI", "processes": ["Jan"] },
+    { "id": "perplexity", "name": "Perplexity", "category": "AI", "processes": ["Perplexity"] },
+    { "id": "cursor", "name": "Cursor", "category": "AI", "processes": ["Cursor"] },
+    { "id": "windsurf", "name": "Windsurf", "category": "AI", "processes": ["Windsurf"] },
+    { "id": "antigravity", "name": "Antigravity", "category": "AI", "processes": ["Antigravity"] },
+    { "id": "grammarly", "name": "Grammarly", "category": "AI", "processes": ["Grammarly*"] },
+    { "id": "itslearning-mcp", "name": "itslearning MCP server", "category": "AI", "processes": ["its"], "relaunch": false },
+
+    { "id": "teamviewer", "name": "TeamViewer", "category": "Remote access", "processes": ["TeamViewer"] },
+    { "id": "anydesk", "name": "AnyDesk", "category": "Remote access", "processes": ["AnyDesk"] },
+    { "id": "parsec", "name": "Parsec", "category": "Remote access", "processes": ["parsecd"] },
+    { "id": "rustdesk", "name": "RustDesk", "category": "Remote access", "processes": ["rustdesk"] },
+
+    { "id": "slack", "name": "Slack", "category": "Chat", "processes": ["slack"] },
+    { "id": "discord", "name": "Discord", "category": "Chat", "processes": ["Discord"] },
+    { "id": "teams", "name": "Microsoft Teams", "category": "Chat", "processes": ["ms-teams", "Teams"] },
+    { "id": "whatsapp", "name": "WhatsApp", "category": "Chat", "processes": ["WhatsApp*"] },
+    { "id": "telegram", "name": "Telegram", "category": "Chat", "processes": ["Telegram"] },
+    { "id": "signal", "name": "Signal", "category": "Chat", "processes": ["Signal"] },
+    { "id": "messenger", "name": "Messenger", "category": "Chat", "processes": ["Messenger"] },
+    { "id": "zoom", "name": "Zoom", "category": "Chat", "processes": ["Zoom"] },
+    { "id": "notion", "name": "Notion", "category": "Chat", "processes": ["Notion"] },
+
+    { "id": "phone-link", "name": "Phone Link", "category": "Device link", "processes": ["PhoneExperienceHost", "YourPhoneAppProxyHost"], "relaunch": false },
+
+    { "id": "google-drive", "name": "Google Drive", "category": "File sync", "processes": ["GoogleDriveFS"] },
+    { "id": "onedrive", "name": "OneDrive", "category": "File sync", "processes": ["OneDrive"] },
+    { "id": "dropbox", "name": "Dropbox", "category": "File sync", "processes": ["Dropbox"] },
+
+    { "id": "flow-launcher", "name": "Flow Launcher", "category": "Launchers & overlays", "processes": ["Flow.Launcher"] },
+    { "id": "powertoys", "name": "PowerToys", "category": "Launchers & overlays", "processes": ["PowerToys", "PowerToys.*"] },
+    { "id": "obs", "name": "OBS Studio", "category": "Launchers & overlays", "processes": ["obs64"] },
+    { "id": "sharex", "name": "ShareX", "category": "Launchers & overlays", "processes": ["ShareX"] }
+  ]
+}

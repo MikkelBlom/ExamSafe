@@ -22,6 +22,10 @@
   public release.
 - **Quality bar:** strict architecture + healthy automated tests are requirements, not nice-to-haves.
 
+- **Honesty rule for the UI (2026-09-30, learned the hard way):** the UI may only claim what the
+  code really did and verified. Anything not handled is named in the visible scope note. Never
+  ship simulated steps behind real-sounding text.
+
 ## Open decisions
 - None blocking. Next stage (read-only detection engine) needs a go-ahead.
 - **CI blocked by GitHub billing (2026-09-30):** first run refused with "recent account payments

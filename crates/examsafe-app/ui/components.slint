@@ -1,7 +1,7 @@
 // Reusable, purely presentational components. No business logic lives here.
 import { Theme, Icons } from "theme.slint";
 
-export enum Phase { idle, checking, fixing, verifying, ready, exam-mode, restoring, restored, failed }
+export enum Phase { idle, checking, confirm, fixing, verifying, ready, exam-mode, restoring, restored, failed }
 
 // state: 0 = pending, 1 = active, 2 = done (mirrors examsafe_core::steps::StepState).
 export struct StepItem {
@@ -227,6 +227,49 @@ export component StepList inherits VerticalLayout {
     for step in root.steps: StepRow {
         label: step.label;
         state: step.state;
+    }
+}
+
+// Names of apps, as a calm card (used for "these will close" and "these will reopen").
+export component AppList inherits Rectangle {
+    in property <[string]> names;
+
+    border-radius: 14px;
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: Theme.border;
+
+    Flickable {
+        width: parent.width;
+        height: parent.height;
+        content-height: list.preferred-height;
+        list := VerticalLayout {
+            width: parent.width;
+            padding: 12px;
+            spacing: 0px;
+            for name in root.names: Rectangle {
+                height: 30px;
+                Rectangle {
+                    x: 4px;
+                    y: (parent.height - self.height) / 2;
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: Theme.text-tertiary;
+                }
+                Text {
+                    x: 20px;
+                    width: parent.width - 24px;
+                    height: parent.height;
+                    vertical-alignment: center;
+                    text: name;
+                    font-family: Theme.font-text;
+                    font-size: 14px;
+                    color: Theme.text-primary;
+                    overflow: elide;
+                }
+            }
+        }
     }
 }
 

@@ -1,31 +1,21 @@
 //! The visible progress steps for each phase.
 
+// Labels describe only what really happens. Services, scheduled tasks and startup items get
+// their own steps when they are implemented.
 pub const CHECK_STEPS: &[&str] = &[
-    "Apps",
-    "Background services",
-    "Scheduled tasks",
-    "Startup items",
-    "Network & adapters",
-    "Browsers & editors",
+    "Listing running programs",
+    "Matching them against the exam rules",
 ];
 
 pub const FIX_STEPS: &[&str] = &[
-    "Saving a restore point",
-    "Stopping scheduled tasks",
-    "Disabling startup items",
-    "Stopping services",
-    "Closing apps",
+    "Saving a restore record",
+    "Asking apps to close",
+    "Force-closing apps that didn't respond",
 ];
 
-pub const VERIFY_STEPS: &[&str] = &["Scanning everything again", "Confirming nothing came back"];
+pub const VERIFY_STEPS: &[&str] = &["Scanning again", "Confirming nothing came back"];
 
-pub const RESTORE_STEPS: &[&str] = &[
-    "Re-enabling services",
-    "Re-enabling scheduled tasks",
-    "Re-enabling startup items",
-    "Reopening your apps",
-    "Confirming everything is back",
-];
+pub const RESTORE_STEPS: &[&str] = &["Reopening your apps", "Clearing the restore record"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepState {
