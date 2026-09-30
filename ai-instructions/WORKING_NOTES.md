@@ -24,6 +24,10 @@
 
 ## Open decisions
 - None blocking. Next stage (read-only detection engine) needs a go-ahead.
+- **CI blocked by GitHub billing (2026-09-30):** first run refused with "recent account payments
+  have failed or your spending limit needs to be increased". Mikkel must fix Billing & plans on
+  GitHub. Note: private repos use paid Actions minutes, and Windows runners count 2x. The same
+  gate runs locally (see docs/ARCHITECTURE.md) until then.
 
 ## Prototype findings (2026-09-30)
 - **Measured** (release build, Mikkel's PC, `tools/measure.ps1`): 24.5 MB working set, 7.4 MB
