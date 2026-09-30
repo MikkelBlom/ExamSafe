@@ -1,18 +1,22 @@
 # Working notes
 
-## Open decisions (need Mikkel)
-1. **Tech stack:** Tauri 2 (recommended: easiest premium UI, Rust core, tray built in, RAM only
-   while window open) vs Slint (lower RAM, harder to make premium). Proposal: a 1-day spike
-   building the same window + tray in both, measuring RAM, then decide.
-2. **Automatic restore trigger:** ExamSafe must not run during the exam, so it cannot watch for the
-   exam ending. Options: (a) manual "Restore" button + reminder on next launch (safest);
-   (b) one-shot scheduled restore at exam end time + buffer from the profile (risk: exam overruns).
-   Recommendation: (a), with (b) as opt-in.
-3. **How far "fix" goes by default:** also disable VPN/virtual network adapters and stop WSL/VMs
-   (ExamMonitor logs adapters and checks for VMs), or only suggest it?
-4. **Prototype:** delete `prototype/powershell/` or keep as reference? Its rule catalog is
-   useful seed data for the known-app catalog.
-5. **GitHub repo:** no remote exists yet. Create private `MikkelBlom/StudentExamSafety`?
+## Decisions made (2026-09-30, by Mikkel)
+- **Stack: Rust + Slint.** No Chromium/WebView wrapper (Tauri rejected). Reason: Slint used the
+  least resources in Mikkel's own test in another project; "Task Manager philosophy" — native,
+  small, instant. Tray via standalone `tray-icon` crate (verify Slint has no tray API of its own).
+- **Exam flow:** one button makes the PC exam-safe → app says "Everything is ready" → user presses
+  **Close ExamSafe** (app exits fully) → next launch shows only **Restore my PC**. No automatic
+  restore in v1; timed auto-restore is in FUTURE_IDEAS.
+- **Defaults:** turn off *everything relevant* for the profile, including VPN/virtual adapters and
+  running VMs/WSL. A hypervisor that stays present is reported, not changed.
+- **UI:** simple view = as few decisions/buttons as possible (one click). Advanced settings are
+  hidden unless opened, and give full transparency + per-item control over what is closed,
+  terminated, stopped, disabled or blocked, and how.
+- **Prototype:** early PowerShell prototype deleted (still in git history, commit 7a186ab).
+- **Repo:** private GitHub repo, HTTPS remote.
+
+## Open decisions
+- None blocking. Next step needs a go-ahead: the Slint spike (see docs/IDEA.md §12).
 
 ## Research findings
 - **ExamMonitor (SDU)** logs running processes (name + description), browser URLs, network
@@ -33,8 +37,12 @@
   of byte 0 set = disabled.
 - **Services are the big blind spot** of the manual routine: Claude Cowork, TeamViewer, GlideX,
   SQL Server, Quick Share all run as services regardless of startup toggles.
+- **Known-app seed list:** the deleted prototype's `config/default-rules.json` (git history,
+  7a186ab) holds ~60 app rules (process/service/task/startup/port footprints) — reuse as the
+  starting catalog when building the engine.
 
 ## Architecture decisions
 - UI unprivileged; admin changes via an elevated helper executing a journaled plan. (Least
   privilege, and one UAC prompt per fix.)
 - Catalog / traits / profiles are data files, not code — updatable without releases.
+- Slint UI uses a custom design system, not stock Fluent/Material styling.

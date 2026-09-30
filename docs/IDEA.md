@@ -41,6 +41,36 @@ Audience: Mikkel first (baseline machine), then any student — including non-te
 
 ## 4. The experience
 
+### Design rule: one click by default, full control when asked
+
+- **By default ExamSafe turns off everything relevant** for the chosen exam profile. The user does
+  not pick items; they press one button.
+- The simple view has as few decisions, buttons and worries as possible.
+- **Advanced settings are hidden** unless you choose to open them. There, everything is
+  transparent and customizable: exactly what is closed, stopped, disabled, blocked or left alone,
+  per item and per category, and with which method (close / terminate / stop service / disable
+  service / disable task / disable startup / policy block / disable adapter).
+
+### The exam flow (decided 2026-09-30)
+
+```
+ Open ExamSafe ──► [ Make my PC exam-safe ] ──► fixing + re-checking ...
+                                                      │
+                                         "Everything is ready ✓"
+                                                      │
+                                      [ Close ExamSafe ]  ← app exits completely
+                                                      │
+                                              ── take exam ──
+                                                      │
+ Open ExamSafe ──► app is in "exam mode" and shows ONE thing: [ Restore my PC ]
+                                                      │
+                                   restore + verify ──► "Back to normal ✓"
+```
+
+- Pressing **Close ExamSafe** is the only way to finish; the app is gone before ExamMonitor starts.
+- While the PC is in exam mode, opening ExamSafe always leads to **Restore my PC** first.
+- Timed automatic restore is a planned *later* addition (see `ai-instructions/FUTURE_IDEAS.md`).
+
 ### Simple view (default — for everyone)
 
 ```
@@ -59,8 +89,8 @@ Audience: Mikkel first (baseline machine), then any student — including non-te
  └──────────────────────────────────────────────┘
 ```
 
-Flow: **choose exam profile → Check → Review plan → Fix → automatic re-check → "Exam safe ✓" →
-ExamSafe closes itself** → take exam → open ExamSafe → **Restore my PC** (verified).
+The only prompts the simple view ever shows are the unavoidable ones: "these apps may have unsaved
+work — close them?" and "ExamSafe doesn't know X — allow or block?" (remembered afterwards).
 
 ### Advanced view (for power users)
 
@@ -133,7 +163,8 @@ once (allow / block, per profile). Decisions are stored by stable identity
 
 ## 7. Fixing — the "make it hard" part
 
-1. **Plan.** Compute every change needed for the chosen profile and show it before doing anything.
+1. **Plan.** Compute every change needed for the chosen profile. The simple view just runs it;
+   the advanced view shows and lets you edit the full plan before running.
 2. **Consent.** Apps with windows are asked about ("Slack — close? unsaved work will be lost").
    Try a graceful close first, force only after consent.
 3. **Journal first.** Write the prior state of each item to a journal *before* changing it.
@@ -152,15 +183,19 @@ once (allow / block, per profile). Decisions are stored by stable identity
    - Windows AI: Copilot/Recall/Click-to-Do policies. Virtual/VPN adapters: disable.
 6. **Verify.** Full re-scan. Only a clean re-scan earns "Exam safe ✓". Anything that came back
    (auto-restarting apps) is shown and fixed again.
-7. **Final pre-flight + exit.** Last check seconds before the exam, then ExamSafe quits
-   completely (no tray, no helper) so it never appears in the exam log as running.
+7. **Ready + close.** "Everything is ready ✓" → the user presses **Close ExamSafe** and the app
+   quits completely (no tray, no helper) so it never appears in the exam log as running.
 
 Privilege model: the UI runs as a normal user. Changes that need admin go through a small
 **elevated helper** started with one UAC prompt, which only executes the journaled plan.
 
 ### Restore
-Replays the journal backwards, verifies each item is back, keeps anything that failed so it can be
-retried. Works after a reboot or crash because the journal is on disk.
+Triggered manually: the next time ExamSafe is opened after an exam, the only action offered is
+**Restore my PC**. It replays the journal backwards, verifies each item is back, and keeps anything
+that failed so it can be retried. Works after a reboot or crash because the journal is on disk.
+
+Because default = "turn off everything relevant", the list can include things you never think
+about. Restore brings back exactly what was on before, nothing more.
 
 ## 8. SDU / ExamMonitor specifics
 
@@ -172,8 +207,9 @@ afterwards. Consequences for our design:
   restore firing mid-exam. Everything happens *before*.
 - We must not kill things *after* ExamMonitor has started (a process vanishing mid-exam is odd).
 - **Network adapters are logged**: VPN/virtual adapters (WireGuard, VirtualBox Host-Only, Cisco)
-  are worth disabling for the exam.
-- **VM checks**: an active hypervisor (WSL2/VirtualBox) may be looked at. We should surface it.
+  are disabled by default (restored afterwards).
+- **VM checks**: running VMs and WSL are stopped by default. A hypervisor that stays *present*
+  (e.g. Windows security features use it) is reported, not changed.
 - ExamSafe never touches ExamMonitor itself.
 
 ⚠ Uncertainty: the technical details above come partly from a 2019 public analysis of ExamMonitor
@@ -216,23 +252,32 @@ app shows and the user ticks:
 - Notes/files on USB sticks
 - Earbuds with assistants
 
-## 11. Tech stack (recommendation, not final)
+## 11. Tech stack — decided: Rust + Slint (2026-09-30)
 
-| Option | Feel / animations | RAM (window open) | Cross-platform | Verdict |
-|---|---|---|---|---|
-| **Tauri 2** (Rust core + web UI in system WebView) | Easiest path to premium, Apple-like UI and smooth animation | ~50–100 MB with window open; a few MB tray-only when the window is destroyed | Win/macOS/Linux, built-in tray | **Recommended** |
-| Slint (native Rust UI) | Good, declarative, animations built in; premium look takes more work | ~10–30 MB | Win/macOS/Linux | Strong alternative if RAM is the top priority |
-| iced / egui | Functional; hard to make feel "Apple" | Low | Yes | Not for this UI bar |
+**Native, no Chromium wrapper.** Same philosophy as the classic Windows Task Manager: small, fast,
+instant to open, no embedded browser. Slint was chosen because it used the least resources when
+Mikkel tested it in another project, and it is native Rust on Windows, macOS and Linux.
 
-Why Tauri fits: all detection/fix logic lives in Rust (fast, safe, portable). The expensive part
-(the WebView) exists only while the window is open, and **nothing runs at all during the exam**,
-so idle footprint is what matters. RAM numbers are rough estimates, to be measured in a spike.
+What that means in practice:
+- **UI:** Slint `.slint` markup with a *custom* design system (our own colours, type, spacing,
+  motion) — not Slint's stock Fluent/Material styles, so it does not look like a generic app.
+  Slint has built-in states, transitions and animations for the smooth, Apple-like feel.
+- **Renderer:** start with the default (Skia/FemtoVG); evaluate Slint's software renderer if RAM
+  matters more than GPU smoothness. Measure, don't guess.
+- **Tray:** Slint has no tray API of its own (as far as I know — verify in the spike); use the
+  standalone `tray-icon` crate (native Win32 / AppKit / AppIndicator, no WebView).
+- **Windows APIs:** the `windows` crate (WMI, Service Control Manager, Task Scheduler COM,
+  registry, IP helper for the TCP table, window display affinity).
+- **Elevated helper:** a second small Rust binary with an admin manifest, started via UAC only
+  when a fix/restore runs.
+- **Licensing note:** Slint is available under GPLv3 or a royalty-free licence for desktop apps
+  (with attribution). Fine for now; check the terms before any public/commercial release.
 
 Architecture:
 
 ```mermaid
 flowchart LR
-  UI["UI (Tauri webview)<br/>simple + advanced views"] <--> Core
+  UI["UI (Slint, native)<br/>simple + advanced views"] <--> Core
   Tray["Tray icon"] <--> Core
   subgraph Core["Rust core (platform-agnostic)"]
     Catalog["Known-app catalog"]
@@ -242,7 +287,7 @@ flowchart LR
     Journal["Journal (restore)"]
   end
   Core --> Platform["Platform adapter trait"]
-  Platform --> Win["Windows: WMI, services, Task Scheduler,<br/>registry, TCP table, WebView2-free scans"]
+  Platform --> Win["Windows: WMI, services, Task Scheduler,<br/>registry, TCP table, adapters"]
   Platform -.later.-> Mac["macOS: launchd, TCC, pf"]
   Platform -.later.-> Linux["Linux: systemd, proc, nft"]
   Planner --> Helper["Elevated helper<br/>(executes journaled plan)"]
@@ -252,12 +297,13 @@ The catalog, traits and profiles are **data files** (versioned, updatable withou
 
 ## 12. Rough roadmap
 
-1. **Spike:** Tauri vs Slint prototype window + tray; measure RAM and feel. Decide.
+1. **Slint spike:** custom-styled window with one animated state change + native tray icon +
+   elevated helper handshake. Measure RAM/CPU/startup time. Validates the look before engine work.
 2. **Read-only engine:** Windows inventory + catalog + traits; advanced view. No changes to the PC yet.
 3. **Profiles + simple view:** exam presets, the one-glance verdict, ask & remember.
 4. **Fix + journal + restore:** elevated helper, verification loop, crash-safe restore.
 5. **Browser/IDE/OS AI controls** via policies and settings.
-6. **Polish:** animations, onboarding, tray popover, final pre-flight + self-exit.
+6. **Polish:** animations, onboarding, tray popover, "Ready → Close ExamSafe" flow.
 7. **Generalize:** bigger catalog, community presets per university, macOS, then Linux.
 
 ## 13. Open decisions

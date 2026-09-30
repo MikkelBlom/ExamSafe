@@ -7,6 +7,13 @@
   scheduled tasks due during the exam are flagged automatically.
 - (Low) Hash-based identity for unsigned binaries.
 
+## Restore
+- (High) **Timed automatic restore.** You usually know when the exam ends: let the profile hold an
+  end time + buffer, and restore automatically after it. Constraint: must never fire while the exam
+  is still running (overtime, extra time) and must not itself show up as something running during
+  the exam — e.g. a one-shot scheduled task created at "Close ExamSafe", disabled by default, with
+  a generous buffer. v1 is manual restore only.
+
 ## UX
 - (Medium) "Practice run" mode: full check+fix+restore days before the exam, so exam morning is boring.
 - (Medium) Shareable read-only report ("what was checked, when") for peace of mind.

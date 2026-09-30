@@ -10,8 +10,8 @@ later. Owner/baseline user: Mikkel (SDU student — Digital Exam + ExamMonitor).
 
 ## Current phase
 **Idea / design.** Do NOT write product code until Mikkel explicitly says to start building.
-The PowerShell files in `prototype/powershell/` were written prematurely; they are parked for
-reference only (the rule catalog in `config/default-rules.json` is useful seed data).
+Stack is decided: **Rust + Slint** (native, no Chromium/WebView wrapper — do not propose Tauri
+or Electron again).
 
 ## Never violate
 1. Never "fire and forget" — every fix is re-verified; only a clean re-scan may say "exam safe".
@@ -24,5 +24,6 @@ reference only (the rule catalog in `config/default-rules.json` is useful seed d
 7. Keep the core platform-agnostic (platform code behind an adapter).
 
 ## UI bar
-Clean, modern, premium, Apple-like, smooth animations, no generic "AI app" look. Simple view for
-non-technical users, advanced view with full detail. Tray icon control.
+Clean, modern, premium, Apple-like, smooth animations, no generic "AI app" look. Simple view:
+one click, minimal decisions. Advanced settings hidden by default, fully transparent and
+customizable. Tray icon control. Flow: make safe → "ready" → Close ExamSafe → next launch = Restore.
