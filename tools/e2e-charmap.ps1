@@ -60,6 +60,14 @@ try {
 
     $after = Invoke-Cli @('status')
     Check ($after.Text -match 'Exam mode: off') 'exam mode is off after restore'
+
+    # The user's "leave this open" choice (from Advanced) must be honoured.
+    '{ "version": 1, "left_open": ["charmap"] }' | Set-Content (Join-Path $env:EXAMSAFE_STATE_DIR 'preferences.json')
+    $leftOpen = Invoke-Cli @('make-safe', '--yes')
+    Check ($leftOpen.Code -eq 0) 'make-safe succeeds with the app left open'
+    Check ((Get-Charmap).Count -eq 1) 'an app the user left open is NOT closed'
+    $cleanup = Invoke-Cli @('status')
+    Check ($cleanup.Text -match 'Exam mode: off') 'nothing to restore when nothing was closed'
 } finally {
     Get-Charmap | Stop-Process -ErrorAction SilentlyContinue
     Remove-Item Env:EXAMSAFE_CATALOG, Env:EXAMSAFE_STATE_DIR -ErrorAction SilentlyContinue

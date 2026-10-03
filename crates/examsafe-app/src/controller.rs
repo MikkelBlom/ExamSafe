@@ -126,6 +126,11 @@ impl Controller {
     }
 
     pub fn start(self: &Rc<Self>) {
+        match self.service.left_open() {
+            Ok(left_open) => *self.disabled.borrow_mut() = left_open,
+            // Not fatal: without saved choices everything on the list is closed (the safe side).
+            Err(error) => eprintln!("examsafe: could not read preferences: {error}"),
+        }
         let exam_mode_active = match self.service.load_record() {
             Ok(record) => record.is_some(),
             Err(error) => {
@@ -335,8 +340,12 @@ impl Controller {
             let mut disabled = self.disabled.borrow_mut();
             disabled.retain(|id| id != &entry_id);
             if !enabled {
-                disabled.push(entry_id);
+                disabled.push(entry_id.clone());
             }
+        }
+        if let Err(error) = self.service.set_left_open(&entry_id, !enabled) {
+            // The choice still applies to this run; it just is not remembered.
+            eprintln!("examsafe: could not save preferences: {error}");
         }
         if let Some(mut item) = self.plan.row_data(row) {
             item.enabled = enabled;

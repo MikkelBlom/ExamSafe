@@ -17,7 +17,7 @@ use examsafe_core::apps::Catalog;
 use examsafe_core::protocol::HELPER_MODE_FLAG;
 use examsafe_core::service::{DEFAULT_GRACE, ExamService};
 use examsafe_platform::processes::{WindowsProcessControl, attach_parent_console};
-use examsafe_platform::store::FileExamModeStore;
+use examsafe_platform::store::{FileExamModeStore, FilePreferencesStore};
 use slint::ComponentHandle;
 
 use crate::controller::Controller;
@@ -78,6 +78,7 @@ fn build_service() -> Result<ExamService, Box<dyn std::error::Error>> {
     Ok(ExamService::new(
         Arc::new(WindowsProcessControl),
         Arc::new(FileExamModeStore::in_app_data()),
+        Arc::new(FilePreferencesStore::in_app_data()),
         Arc::new(catalog),
         std::process::id(),
         DEFAULT_GRACE,

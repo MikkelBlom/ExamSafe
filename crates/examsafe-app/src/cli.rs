@@ -47,7 +47,19 @@ pub fn run(args: &[String], service: &ExamService) -> u8 {
     }
 }
 
+/// Apps the user chose to leave open (in the window's Advanced view). Unreadable preferences
+/// fall back to "close everything on the list", the safe side.
+fn left_open(service: &ExamService) -> Vec<String> {
+    service.left_open().unwrap_or_else(|error| {
+        say(&format!(
+            "Could not read preferences, closing everything on the list: {error}"
+        ));
+        Vec::new()
+    })
+}
+
 fn scan(service: &ExamService) -> u8 {
+    let left_open = left_open(service);
     match service.scan() {
         Ok(findings) if findings.is_empty() => {
             say("No apps from the exam list are running.");
@@ -55,16 +67,18 @@ fn scan(service: &ExamService) -> u8 {
         }
         Ok(findings) => {
             for app in &findings {
+                let note = if left_open.contains(&app.entry_id) {
+                    ", left open (your choice)"
+                } else if app.launch.is_some() {
+                    ", will reopen"
+                } else {
+                    ""
+                };
                 say(&format!(
-                    "{:<24} {:<22} {} process(es){}",
+                    "{:<24} {:<22} {} process(es){note}",
                     app.name,
                     app.category,
                     app.pids.len(),
-                    if app.launch.is_some() {
-                        ", will reopen"
-                    } else {
-                        ""
-                    }
                 ));
             }
             0
@@ -115,6 +129,7 @@ fn drive(service: &ExamService, restore: bool) -> u8 {
         return 1;
     }
 
+    let left_open = left_open(service);
     let mut flow = Flow::new();
     let mut findings: Vec<AppFinding> = Vec::new();
     let mut queue = VecDeque::from([Event::Launched { exam_mode_active }, Event::PrimaryPressed]);
@@ -131,10 +146,14 @@ fn drive(service: &ExamService, restore: bool) -> u8 {
             if effect == Effect::Quit {
                 continue;
             }
-            match run_effect(service, effect, &[], &findings, unix_now()) {
+            match run_effect(service, effect, &left_open, &findings, unix_now()) {
                 Ok(output) => {
                     if let Some(new) = output.findings {
-                        findings = new;
+                        // Same rule as the window: apps the user leaves open are not selected.
+                        findings = new
+                            .into_iter()
+                            .filter(|app| !left_open.contains(&app.entry_id))
+                            .collect();
                     }
                     queue.extend(output.event);
                 }
@@ -152,6 +171,10 @@ fn drive(service: &ExamService, restore: bool) -> u8 {
     }
 
     match flow.phase() {
+        Phase::Ready if flow.issues() == 0 => {
+            say("Done: no apps from the exam list needed closing. Nothing to restore later.");
+            0
+        }
         Phase::Ready => {
             say(&format!(
                 "Done: {} app(s) closed and verified. Run 'restore' after the exam.",

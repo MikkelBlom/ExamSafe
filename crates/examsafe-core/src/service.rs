@@ -11,7 +11,10 @@ use crate::apps::{
 };
 use crate::exam_mode::ExamModeRecord;
 use crate::flow::{Effect, Event};
-use crate::ports::{ExamModeRepository, ProcessControl, ProcessError, StoreError};
+use crate::ports::{
+    ExamModeRepository, PreferencesRepository, ProcessControl, ProcessError, StoreError,
+};
+use crate::preferences::Preferences;
 
 /// How long apps get to close by themselves before they are force-closed.
 pub const DEFAULT_GRACE: Duration = Duration::from_secs(4);
@@ -27,6 +30,7 @@ pub enum ServiceError {
 pub struct ExamService {
     control: Arc<dyn ProcessControl>,
     store: Arc<dyn ExamModeRepository>,
+    preferences: Arc<dyn PreferencesRepository>,
     catalog: Arc<Catalog>,
     self_pid: u32,
     grace: Duration,
@@ -36,6 +40,7 @@ impl ExamService {
     pub fn new(
         control: Arc<dyn ProcessControl>,
         store: Arc<dyn ExamModeRepository>,
+        preferences: Arc<dyn PreferencesRepository>,
         catalog: Arc<Catalog>,
         self_pid: u32,
         grace: Duration,
@@ -43,6 +48,7 @@ impl ExamService {
         Self {
             control,
             store,
+            preferences,
             catalog,
             self_pid,
             grace,
@@ -69,6 +75,21 @@ impl ExamService {
             }
         }
         Ok(findings)
+    }
+
+    /// Catalog ids the user chose to leave open.
+    pub fn left_open(&self) -> Result<Vec<String>, ServiceError> {
+        Ok(self.preferences.load()?.left_open)
+    }
+
+    /// Remembers whether an app should be left open next time too.
+    pub fn set_left_open(&self, entry_id: &str, left_open: bool) -> Result<(), ServiceError> {
+        let mut preferences = self
+            .preferences
+            .load()
+            .unwrap_or_else(|_| Preferences::default());
+        preferences.set_left_open(entry_id, left_open);
+        Ok(self.preferences.save(&preferences)?)
     }
 
     pub fn load_record(&self) -> Result<Option<ExamModeRecord>, ServiceError> {
@@ -255,6 +276,19 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct MemoryPreferences(Mutex<Preferences>);
+
+    impl PreferencesRepository for MemoryPreferences {
+        fn load(&self) -> Result<Preferences, StoreError> {
+            Ok(self.0.lock().unwrap().clone())
+        }
+        fn save(&self, preferences: &Preferences) -> Result<(), StoreError> {
+            *self.0.lock().unwrap() = preferences.clone();
+            Ok(())
+        }
+    }
+
     const SELF_PID: u32 = 500;
 
     fn setup(control: FakeControl) -> (Arc<FakeControl>, Arc<MemoryStore>, ExamService) {
@@ -263,6 +297,7 @@ mod tests {
         let service = ExamService::new(
             control.clone(),
             store.clone(),
+            Arc::new(MemoryPreferences::default()),
             Arc::new(catalog()),
             SELF_PID,
             Duration::ZERO,
@@ -397,6 +432,15 @@ mod tests {
         let record = store.load().unwrap().unwrap();
         assert_eq!(record.closed_apps.len(), 1);
         assert_eq!(record.started_unix, 1);
+    }
+
+    #[test]
+    fn left_open_choices_are_remembered() {
+        let (_control, _store, service) = setup(FakeControl::with(vec![]));
+        service.set_left_open("slack", true).unwrap();
+        service.set_left_open("ollama", true).unwrap();
+        service.set_left_open("slack", false).unwrap();
+        assert_eq!(service.left_open().unwrap(), vec!["ollama"]);
     }
 
     #[test]

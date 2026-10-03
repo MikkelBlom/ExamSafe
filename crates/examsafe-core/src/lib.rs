@@ -9,6 +9,7 @@ pub mod apps;
 pub mod exam_mode;
 pub mod flow;
 pub mod ports;
+pub mod preferences;
 pub mod protocol;
 pub mod service;
 pub mod steps;

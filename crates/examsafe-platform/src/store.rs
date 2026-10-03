@@ -1,9 +1,10 @@
-//! File-backed [`ExamModeRepository`].
+//! File-backed [`ExamModeRepository`] and [`PreferencesRepository`].
 
 use std::path::{Path, PathBuf};
 
 use examsafe_core::exam_mode::ExamModeRecord;
-use examsafe_core::ports::{ExamModeRepository, StoreError};
+use examsafe_core::ports::{ExamModeRepository, PreferencesRepository, StoreError};
+use examsafe_core::preferences::Preferences;
 
 use crate::paths::app_data_dir;
 
@@ -17,11 +18,9 @@ impl FileExamModeStore {
         Self { path: path.into() }
     }
 
-    /// `%LOCALAPPDATA%\ExamSafe\exam-mode.json`, or `$EXAMSAFE_STATE_DIR\exam-mode.json` when
-    /// that variable is set (used by tests so they never touch the real record).
+    /// `exam-mode.json` in [`state_dir`].
     pub fn in_app_data() -> Self {
-        let dir = std::env::var_os("EXAMSAFE_STATE_DIR").map_or_else(app_data_dir, PathBuf::from);
-        Self::new(dir.join("exam-mode.json"))
+        Self::new(state_dir().join("exam-mode.json"))
     }
 
     pub fn path(&self) -> &Path {
@@ -29,8 +28,56 @@ impl FileExamModeStore {
     }
 }
 
+/// `%LOCALAPPDATA%\ExamSafe`, or `$EXAMSAFE_STATE_DIR` when set (tests use it so they never touch
+/// the real files).
+pub fn state_dir() -> PathBuf {
+    std::env::var_os("EXAMSAFE_STATE_DIR").map_or_else(app_data_dir, PathBuf::from)
+}
+
 fn io_error(context: &str, error: &std::io::Error) -> StoreError {
     StoreError::Io(format!("{context}: {error}"))
+}
+
+/// Write-then-rename so a crash never leaves a half-written file.
+fn write_atomic(path: &Path, contents: &str) -> Result<(), StoreError> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|error| io_error("create folder", &error))?;
+    }
+    let temp = path.with_extension("json.tmp");
+    std::fs::write(&temp, contents).map_err(|error| io_error("write", &error))?;
+    std::fs::rename(&temp, path).map_err(|error| io_error("replace", &error))
+}
+
+#[derive(Debug, Clone)]
+pub struct FilePreferencesStore {
+    path: PathBuf,
+}
+
+impl FilePreferencesStore {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+
+    /// `preferences.json` in [`state_dir`].
+    pub fn in_app_data() -> Self {
+        Self::new(state_dir().join("preferences.json"))
+    }
+}
+
+impl PreferencesRepository for FilePreferencesStore {
+    fn load(&self) -> Result<Preferences, StoreError> {
+        match std::fs::read_to_string(&self.path) {
+            Ok(json) => Preferences::from_json(&json),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Ok(Preferences::default())
+            }
+            Err(error) => Err(io_error("read", &error)),
+        }
+    }
+
+    fn save(&self, preferences: &Preferences) -> Result<(), StoreError> {
+        write_atomic(&self.path, &preferences.to_json()?)
+    }
 }
 
 impl ExamModeRepository for FileExamModeStore {
@@ -43,13 +90,7 @@ impl ExamModeRepository for FileExamModeStore {
     }
 
     fn save(&self, record: &ExamModeRecord) -> Result<(), StoreError> {
-        if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir).map_err(|error| io_error("create folder", &error))?;
-        }
-        // Write-then-rename so a crash never leaves a half-written record.
-        let temp = self.path.with_extension("json.tmp");
-        std::fs::write(&temp, record.to_json()?).map_err(|error| io_error("write", &error))?;
-        std::fs::rename(&temp, &self.path).map_err(|error| io_error("replace", &error))
+        write_atomic(&self.path, &record.to_json()?)
     }
 
     fn clear(&self) -> Result<(), StoreError> {
@@ -93,6 +134,18 @@ mod tests {
         if let Some(dir) = store.path().parent() {
             std::fs::remove_dir_all(dir).unwrap();
         }
+    }
+
+    #[test]
+    fn preferences_default_when_missing_and_round_trip() {
+        let dir = temp_store().path().parent().unwrap().to_path_buf();
+        let store = FilePreferencesStore::new(dir.join("preferences.json"));
+        assert_eq!(store.load().unwrap(), Preferences::default());
+        let mut prefs = Preferences::default();
+        prefs.set_left_open("slack", true);
+        store.save(&prefs).unwrap();
+        assert_eq!(store.load().unwrap(), prefs);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

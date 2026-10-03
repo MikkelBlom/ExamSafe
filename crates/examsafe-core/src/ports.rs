@@ -5,13 +5,14 @@ use std::time::Duration;
 
 use crate::apps::{LaunchTarget, ProcessDetails, RunningProcess};
 use crate::exam_mode::ExamModeRecord;
+use crate::preferences::Preferences;
 use crate::protocol::{HelperAction, HelperResponse};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StoreError {
-    #[error("could not access the exam-mode record: {0}")]
+    #[error("could not access ExamSafe's saved data: {0}")]
     Io(String),
-    #[error("the exam-mode record is unreadable: {0}")]
+    #[error("ExamSafe's saved data is unreadable: {0}")]
     Corrupt(String),
 }
 
@@ -20,6 +21,12 @@ pub trait ExamModeRepository: Send + Sync {
     fn load(&self) -> Result<Option<ExamModeRecord>, StoreError>;
     fn save(&self, record: &ExamModeRecord) -> Result<(), StoreError>;
     fn clear(&self) -> Result<(), StoreError>;
+}
+
+/// Persists user preferences. A missing file means defaults.
+pub trait PreferencesRepository: Send + Sync {
+    fn load(&self) -> Result<Preferences, StoreError>;
+    fn save(&self, preferences: &Preferences) -> Result<(), StoreError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
