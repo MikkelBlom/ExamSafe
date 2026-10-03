@@ -1047,6 +1047,7 @@ dependencies = [
  "examsafe-core",
  "examsafe-helper",
  "examsafe-platform",
+ "i-slint-backend-testing",
  "slint",
  "slint-build",
  "tray-icon",

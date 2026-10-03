@@ -61,7 +61,7 @@ rules + `unsafe` exemptions) and by workspace lints (`unsafe_code = "deny"`,
 | Unit — app | tray icon rendering | ✓ |
 | Architecture | `tools/check-architecture.ps1` | ✓ |
 | Performance | `tools/measure.ps1` (startup, RAM, idle CPU) | manual |
-| UI flow | manual screenshots for now — see FUTURE_IDEAS (Slint testing backend) | – |
+| UI (headless) | `examsafe-app/src/ui_tests.rs`: texts, button labels, enabled state and actions per phase via Slint's testing backend and accessibility labels (needs element debug info, enabled for debug builds in `build.rs`) | ✓ |
 
 Commands:
 

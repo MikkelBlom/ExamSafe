@@ -1,5 +1,8 @@
 fn main() {
-    if let Err(error) = slint_build::compile("ui/app-window.slint") {
+    // Element debug info lets the headless UI tests find elements; release builds skip it.
+    let debug_build = std::env::var("PROFILE").is_ok_and(|profile| profile == "debug");
+    let config = slint_build::CompilerConfiguration::new().with_debug_info(debug_build);
+    if let Err(error) = slint_build::compile_with_config("ui/app-window.slint", config) {
         panic!("failed to compile the Slint UI: {error}");
     }
     #[cfg(windows)]

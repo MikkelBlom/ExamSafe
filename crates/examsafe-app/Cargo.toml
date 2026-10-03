@@ -18,6 +18,10 @@ examsafe-helper.workspace = true
 slint.workspace = true
 tray-icon.workspace = true
 
+[dev-dependencies]
+# Headless Slint backend for UI tests; must match the slint version exactly.
+i-slint-backend-testing = "=1.18.1"
+
 [build-dependencies]
 slint-build.workspace = true
 

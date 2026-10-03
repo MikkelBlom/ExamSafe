@@ -8,6 +8,8 @@
 mod cli;
 mod controller;
 mod tray;
+#[cfg(test)]
+mod ui_tests;
 
 use std::process::ExitCode;
 use std::sync::Arc;

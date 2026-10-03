@@ -22,6 +22,11 @@ export component PrimaryButton inherits Rectangle {
     in property <color> tint: Theme.accent;
     callback clicked();
 
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if (root.enabled) { root.clicked(); } }
+
     height: 52px;
     border-radius: 14px;
     background: !root.enabled ? Theme.muted-fill
@@ -60,6 +65,10 @@ export component LinkButton inherits Rectangle {
     in property <string> icon: "";
     callback clicked();
 
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
+
     height: 32px;
     width: row.preferred-width + 20px;
     border-radius: 8px;
@@ -72,6 +81,7 @@ export component LinkButton inherits Rectangle {
         spacing: 6px;
         if root.icon != "": Text {
             text: root.icon;
+            accessible-role: none;
             font-family: Theme.font-icons;
             font-size: 11px;
             vertical-alignment: center;
@@ -156,6 +166,7 @@ export component StatusOrb inherits Rectangle {
             width: parent.width;
             height: parent.height;
             text: root.glyph;
+            accessible-role: none;
             font-family: Theme.font-icons;
             font-size: 40px;
             color: #ffffff;
@@ -186,6 +197,7 @@ component StepRow inherits Rectangle {
             width: parent.width;
             height: parent.height;
             text: Icons.check;
+            accessible-role: none;
             font-family: Theme.font-icons;
             font-size: 9px;
             color: #ffffff;
@@ -277,6 +289,11 @@ export component Toggle inherits Rectangle {
     in property <bool> checked;
     callback toggled(bool);
 
+    accessible-role: checkbox;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-action-default => { root.toggled(!root.checked); }
+
     width: 42px;
     height: 24px;
     border-radius: 12px;
@@ -344,6 +361,7 @@ export component PlanRow inherits Rectangle {
         VerticalLayout {
             alignment: center;
             Toggle {
+                accessible-label: "Close " + root.item.name;
                 checked: root.item.enabled;
                 toggled(value) => { root.toggled(value); }
             }

@@ -52,3 +52,16 @@ Renamed system exes in %TEMP% are blocked (Bitdefender) — e2e uses the origina
 Advanced list spread its texts apart when short (fixed). Mikkel's real journal still holds a v1
 prototype record → first launch shows "Exam mode is on" with nothing to reopen; Restore clears it.
 **Next:** Antigravity test with Mikkel's permission (it was open); then services/tasks/startup.
+
+## 2026-10-03 — Claude Code (desktop) — Preferences, icon, UI tests
+**Summary:** A safety classifier twice stopped responses when starting the services/scheduled
+tasks/startup-items stage; Mikkel chose to continue with everything else. Done: remembered
+"leave open" choices (preferences.json; honoured by window and CLI — the CLI previously ignored
+them), app icon (tools/make-icon.ps1 → assets/, embedded in exe with plain version info, window
+icon), idle screen states how many listed apps are running, headless UI test via Slint testing
+backend, accessibility roles/labels on buttons and toggles (icon glyphs hidden from screen
+readers), .gitattributes. dist\ExamSafe.exe rebuilt.
+**Issues:** Occasional transient build/link failures (file locks, likely antivirus scanning new
+binaries) — re-running works. Slint ElementHandle needs element debug info (debug builds only).
+**Next:** Services / scheduled tasks / startup items — try in a new session or implement
+manually from IDEA §7 + WORKING_NOTES. Mikkel should still try the real exe once.
