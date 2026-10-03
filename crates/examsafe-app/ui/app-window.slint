@@ -6,6 +6,7 @@ export { Phase, StepItem, PlanItem }
 
 export component AppWindow inherits Window {
     title: "ExamSafe";
+    icon: @image-url("../../../assets/icon.png");
     preferred-width: 440px;
     preferred-height: 680px;
     min-width: 400px;
@@ -18,6 +19,9 @@ export component AppWindow inherits Window {
     in property <int> issue-count: 0;
     in property <string> failure-reason;
     in property <bool> exam-mode-active: false;
+    // From the background scan at startup: listed apps running now (minus ones left open).
+    // -1 means "not scanned yet".
+    in property <int> running-count: -1;
     // Apps shown on the confirm screen (will close) and in exam mode (will reopen).
     in property <[string]> app-names;
     in property <[StepItem]> steps;
@@ -49,6 +53,9 @@ export component AppWindow inherits Window {
     }
 
     pure function subline() -> string {
+        if (root.phase == Phase.idle && root.running-count == 0) { return "None of the apps on the exam list are running right now."; }
+        if (root.phase == Phase.idle && root.running-count == 1) { return "1 app on the exam list is running. One click closes it, checks it stays closed, and reopens it afterwards."; }
+        if (root.phase == Phase.idle && root.running-count > 1) { return "\{root.running-count} apps on the exam list are running. One click closes them, checks they stay closed, and reopens them afterwards."; }
         if (root.phase == Phase.idle) { return "Closes the apps your exam doesn't allow, checks they stay closed, and reopens them afterwards."; }
         if (root.phase == Phase.checking) { return "Looking for apps your exam doesn't allow."; }
         if (root.phase == Phase.confirm) { return "Save your work in these apps first. They close now and reopen when you restore."; }

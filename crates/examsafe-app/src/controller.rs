@@ -71,6 +71,8 @@ pub struct Controller {
     tray: Tray,
     /// Last scan: catalog apps running right now.
     findings: RefCell<Vec<AppFinding>>,
+    /// Whether any scan has completed yet (so the UI can tell "none running" from "unknown").
+    scanned: Cell<bool>,
     /// Apps the user switched off in Advanced (by catalog id).
     disabled: RefCell<Vec<String>>,
     steps: Rc<VecModel<StepItem>>,
@@ -96,6 +98,7 @@ impl Controller {
             flow: RefCell::new(Flow::new()),
             tray,
             findings: RefCell::new(Vec::new()),
+            scanned: Cell::new(false),
             disabled: RefCell::new(Vec::new()),
             steps,
             plan,
@@ -300,6 +303,7 @@ impl Controller {
 
     fn set_findings(&self, findings: Vec<AppFinding>) {
         *self.findings.borrow_mut() = findings;
+        self.scanned.set(true);
         self.rebuild_plan();
         self.render();
     }
@@ -351,6 +355,7 @@ impl Controller {
             item.enabled = enabled;
             self.plan.set_row_data(row, item);
         }
+        self.render();
     }
 
     fn set_steps(&self, labels: &[&str], completed: usize) {
@@ -423,6 +428,12 @@ impl Controller {
             ui.set_issue_count(i32::try_from(issues).unwrap_or(i32::MAX));
             ui.set_failure_reason(failure.into());
             ui.set_exam_mode_active(exam_mode_active);
+            let running = if self.scanned.get() {
+                i32::try_from(self.selection().len()).unwrap_or(i32::MAX)
+            } else {
+                -1
+            };
+            ui.set_running_count(running);
         }
         let (status, tooltip) = tray_status(phase);
         self.tray.set_status(status, tooltip);
