@@ -9,8 +9,10 @@ later. Owner/baseline user: Mikkel (SDU student — Digital Exam + ExamMonitor).
 `docs/IDEA.md`.
 
 ## Current phase
-**Prototype built (2026-09-30).** Next stage is the read-only detection engine — confirm scope
-with Mikkel before starting each new stage. Stack is decided: **Rust + Slint** with the software
+**Apps stage done (2026-10-03):** apps are really detected, closed, verified and reopened.
+Next stage: services, scheduled tasks and startup items via the elevated helper — confirm scope
+with Mikkel before starting each new stage. Never close Mikkel's open apps or trigger shutdowns
+while testing; use harmless targets (tools/e2e-charmap.ps1). Stack is decided: **Rust + Slint** with the software
 renderer (native, no Chromium/WebView wrapper — do not propose Tauri or Electron again).
 Code architecture and quality gate: `docs/ARCHITECTURE.md` — keep it strict: layer rules are
 enforced by `tools/check-architecture.ps1`, clippy warnings are errors, domain logic lives in
