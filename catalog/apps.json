@@ -1,13 +1,15 @@
 {
   "version": 1,
-  "notes": "Apps ExamSafe closes for an exam. 'processes' are executable names (without .exe), case-insensitive; a trailing * matches a prefix. 'relaunch': reopen the app on restore. Services, scheduled tasks and startup items are handled separately (not yet implemented).",
+  "notes": "What ExamSafe turns off for an exam. 'processes': executable names (without .exe). 'services': Windows service names (not display names). 'tasks': full scheduled-task paths. All case-insensitive; a trailing * matches a prefix. 'service_start': what the services are set to, 'disabled' (default) or 'manual'. 'relaunch': reopen the app on restore. 'virtual_adapters': words that mark a VPN/virtual network adapter (shown in Advanced, not changed yet). Security software and exam software are never touched, whatever is listed here.",
+  "virtual_adapters": ["WireGuard", "Wintun", "VirtualBox", "VMware", "Hyper-V", "vEthernet", "TAP-Windows", "TAP Adapter", "OpenVPN", "Cisco AnyConnect", "Cisco Secure", "ZeroTier", "Tailscale", "NordLynx", "Radmin VPN", "Hamachi"],
   "entries": [
-    { "id": "claude", "name": "Claude", "category": "AI", "processes": ["claude", "cowork-svc"] },
+    { "id": "claude", "name": "Claude", "category": "AI", "processes": ["claude"], "services": ["CoworkVMService"] },
     { "id": "chatgpt", "name": "ChatGPT", "category": "AI", "processes": ["ChatGPT"] },
     { "id": "codex", "name": "Codex", "category": "AI", "processes": ["Codex"] },
     { "id": "copilot", "name": "Microsoft Copilot", "category": "AI", "processes": ["mscopilot", "Copilot", "M365Copilot"] },
     { "id": "wispr-flow", "name": "Wispr Flow", "category": "AI", "processes": ["Wispr Flow", "Wispr Flow Helper"] },
     { "id": "ollama", "name": "Ollama", "category": "AI", "processes": ["ollama app", "ollama"] },
+    { "id": "llama-cpp", "name": "llama.cpp server", "category": "AI", "processes": ["llama-server", "llama-cli"], "relaunch": false },
     { "id": "lm-studio", "name": "LM Studio", "category": "AI", "processes": ["LM Studio", "lms"] },
     { "id": "gpt4all", "name": "GPT4All", "category": "AI", "processes": ["gpt4all*", "chat"] },
     { "id": "jan", "name": "Jan", "category": "AI", "processes": ["Jan"] },
@@ -18,13 +20,16 @@
     { "id": "grammarly", "name": "Grammarly", "category": "AI", "processes": ["Grammarly*"] },
     { "id": "itslearning-mcp", "name": "itslearning MCP server", "category": "AI", "processes": ["its"], "relaunch": false },
 
-    { "id": "teamviewer", "name": "TeamViewer", "category": "Remote access", "processes": ["TeamViewer"] },
-    { "id": "anydesk", "name": "AnyDesk", "category": "Remote access", "processes": ["AnyDesk"] },
-    { "id": "parsec", "name": "Parsec", "category": "Remote access", "processes": ["parsecd"] },
-    { "id": "rustdesk", "name": "RustDesk", "category": "Remote access", "processes": ["rustdesk"] },
+    { "id": "teamviewer", "name": "TeamViewer", "category": "Remote access", "processes": ["TeamViewer"], "services": ["TeamViewer"] },
+    { "id": "anydesk", "name": "AnyDesk", "category": "Remote access", "processes": ["AnyDesk"], "services": ["AnyDesk"] },
+    { "id": "parsec", "name": "Parsec", "category": "Remote access", "processes": ["parsecd"], "services": ["Parsec"] },
+    { "id": "rustdesk", "name": "RustDesk", "category": "Remote access", "processes": ["rustdesk"], "services": ["RustDesk"] },
+    { "id": "chrome-remote-desktop", "name": "Chrome Remote Desktop host", "category": "Remote access", "processes": ["remoting_host"], "services": ["chromoting"], "relaunch": false },
+    { "id": "splashtop", "name": "Splashtop", "category": "Remote access", "processes": ["SRServer", "SRManager"], "services": ["SplashtopRemoteService"] },
+    { "id": "glidex", "name": "ASUS GlideX", "category": "Remote access", "processes": ["GlideX"], "services": ["GlideXRemoteService", "GlideXService", "GlideXServiceExt"] },
 
     { "id": "slack", "name": "Slack", "category": "Chat", "processes": ["slack"] },
-    { "id": "discord", "name": "Discord", "category": "Chat", "processes": ["Discord"] },
+    { "id": "discord", "name": "Discord", "category": "Chat", "processes": ["Discord"], "services": ["DiscordSystemHelper"] },
     { "id": "teams", "name": "Microsoft Teams", "category": "Chat", "processes": ["ms-teams", "Teams"] },
     { "id": "whatsapp", "name": "WhatsApp", "category": "Chat", "processes": ["WhatsApp*"] },
     { "id": "telegram", "name": "Telegram", "category": "Chat", "processes": ["Telegram"] },
@@ -34,13 +39,25 @@
     { "id": "notion", "name": "Notion", "category": "Chat", "processes": ["Notion"] },
 
     { "id": "phone-link", "name": "Phone Link", "category": "Device link", "processes": ["PhoneExperienceHost", "YourPhoneAppProxyHost"], "relaunch": false },
+    { "id": "cross-device", "name": "Windows Cross Device", "category": "Device link", "processes": ["CrossDeviceService", "CrossDeviceResume"], "relaunch": false },
+    { "id": "quick-share", "name": "Samsung Quick Share", "category": "Device link", "processes": ["QuickShare"], "services": ["SamsungQuickShareService"] },
 
     { "id": "google-drive", "name": "Google Drive", "category": "File sync", "processes": ["GoogleDriveFS"] },
-    { "id": "onedrive", "name": "OneDrive", "category": "File sync", "processes": ["OneDrive"] },
-    { "id": "dropbox", "name": "Dropbox", "category": "File sync", "processes": ["Dropbox"] },
+    { "id": "onedrive", "name": "OneDrive", "category": "File sync", "processes": ["OneDrive"], "tasks": ["\\OneDrive *"] },
+    { "id": "dropbox", "name": "Dropbox", "category": "File sync", "processes": ["Dropbox"], "services": ["DbxSvc"] },
 
-    { "id": "flow-launcher", "name": "Flow Launcher", "category": "Launchers & overlays", "processes": ["Flow.Launcher"] },
-    { "id": "powertoys", "name": "PowerToys", "category": "Launchers & overlays", "processes": ["PowerToys", "PowerToys.*"] },
+    { "id": "cisco-secure-client", "name": "Cisco Secure Client (VPN)", "category": "VPN", "processes": ["csc_ui", "vpnui"], "services": ["csc_vpnagent", "vpnagent"] },
+    { "id": "wsl", "name": "WSL (Linux on Windows)", "category": "Virtual machines", "processes": ["wsl", "wslhost"], "services": ["WSLService"], "relaunch": false },
+    { "id": "docker-desktop", "name": "Docker Desktop", "category": "Virtual machines", "processes": ["Docker Desktop", "com.docker.backend", "com.docker.build"], "services": ["com.docker.service"] },
+    { "id": "virtualbox", "name": "VirtualBox", "category": "Virtual machines", "processes": ["VirtualBox", "VirtualBoxVM", "VBoxHeadless"], "services": ["VBoxSDS"] },
+
+    { "id": "sql-server", "name": "SQL Server", "category": "Work services", "services": ["MSSQLSERVER", "MSSQL$*", "SQLAgent$*", "SQLSERVERAGENT", "MSSQLLaunchpad", "MSSQLFDLauncher", "SQLTELEMETRY*", "SQLBrowser"] },
+    { "id": "pms-vulnerability-watch", "name": "PMS Vulnerability Watch", "category": "Work jobs", "tasks": ["\\PMS Vulnerability Watch"] },
+
+    { "id": "flow-launcher", "name": "Flow Launcher", "category": "Launchers & overlays", "processes": ["Flow.Launcher"], "tasks": ["\\StartFlowLauncher"] },
+    { "id": "powertoys", "name": "PowerToys", "category": "Launchers & overlays", "processes": ["PowerToys", "PowerToys.*"], "tasks": ["\\PowerToys\\Autorun for *"] },
+    { "id": "launchpad", "name": "Launchpad", "category": "Launchers & overlays", "processes": ["Launchpad"] },
+    { "id": "ubisoft-connect", "name": "Ubisoft Connect", "category": "Launchers & overlays", "processes": ["upc", "UplayWebCore"], "tasks": ["\\Ubisoft\\*"] },
     { "id": "obs", "name": "OBS Studio", "category": "Launchers & overlays", "processes": ["obs64"] },
     { "id": "sharex", "name": "ShareX", "category": "Launchers & overlays", "processes": ["ShareX"] }
   ]
