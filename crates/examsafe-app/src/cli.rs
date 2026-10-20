@@ -12,7 +12,7 @@
 use std::collections::VecDeque;
 use std::io::Write;
 
-use examsafe_core::apps::AppFinding;
+use examsafe_core::apps::{AppFinding, ClosedApp, LaunchTarget};
 use examsafe_core::flow::{Effect, Event, Flow, Phase};
 use examsafe_core::service::{ExamService, run_effect};
 
@@ -99,7 +99,7 @@ fn status(service: &ExamService) -> u8 {
                 record.closed_apps.len()
             ));
             for app in &record.closed_apps {
-                say(&format!("  {} -> {:?}", app.name, app.launch));
+                say(&format!("  {}", describe_closed(app)));
             }
         }
         Err(error) => {
@@ -194,6 +194,30 @@ fn drive(service: &ExamService, restore: bool) -> u8 {
             1
         }
     }
+}
+
+/// One journal line: what will be started on restore, and how.
+fn describe_closed(app: &ClosedApp) -> String {
+    let Some(spec) = app.launch_spec() else {
+        return format!("{}: not reopened automatically", app.name);
+    };
+    let target = match &spec.target {
+        LaunchTarget::Path(path) => path.clone(),
+        LaunchTarget::AppId(id) => format!("Store app {id}"),
+    };
+    let mut line = format!("{} -> {target}", app.name);
+    if let Some(arguments) = &spec.arguments {
+        line.push_str(&format!(" | args: {arguments}"));
+    }
+    if let Some(dir) = &spec.working_dir {
+        line.push_str(&format!(" | in: {dir}"));
+    }
+    line.push_str(if spec.background {
+        " | in the background"
+    } else {
+        " | with its window"
+    });
+    line
 }
 
 fn unix_now() -> u64 {

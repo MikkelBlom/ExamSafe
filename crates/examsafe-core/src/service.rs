@@ -71,7 +71,8 @@ impl ExamService {
                     .iter()
                     .map(|&pid| self.control.describe(pid))
                     .collect();
-                finding.launch = pick_launch(&details);
+                let had_window = self.control.has_visible_window(&finding.pids);
+                finding.launch = pick_launch(&details, had_window);
             }
         }
         Ok(findings)
@@ -115,12 +116,12 @@ impl ExamService {
                 .entry(&app.entry_id)
                 .map(|entry| entry.processes.clone())
                 .unwrap_or_default();
-            record.closed_apps.push(ClosedApp {
-                entry_id: app.entry_id.clone(),
-                name: app.name.clone(),
+            record.closed_apps.push(ClosedApp::new(
+                &app.entry_id,
+                &app.name,
                 processes,
-                launch: app.launch.clone(),
-            });
+                app.launch.as_ref(),
+            ));
         }
         self.store.save(&record)?;
         Ok(())
@@ -254,8 +255,8 @@ pub fn run_effect(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::apps::LaunchTarget;
     use crate::apps::tests::{FakeControl, catalog, process};
+    use crate::apps::{LaunchSpec, LaunchTarget, ProcessDetails};
     use crate::flow::{Flow, Phase};
     use std::sync::Mutex;
 
@@ -341,11 +342,14 @@ mod tests {
         ]);
         control.details.insert(
             1,
-            crate::apps::ProcessDetails {
+            ProcessDetails {
                 path: Some("C:\\slack.exe".into()),
-                app_id: None,
+                command_line: Some("\"C:\\slack.exe\" --startup".into()),
+                working_dir: Some("C:\\Users\\me".into()),
+                ..ProcessDetails::default()
             },
         );
+        // Slack lived in the tray: no visible window.
         let (control, store, service) = setup(control);
 
         let mut flow = Flow::new();
@@ -363,10 +367,14 @@ mod tests {
         );
         let record = store.load().unwrap().unwrap();
         assert_eq!(record.closed_apps.len(), 1);
+        let recorded = &record.closed_apps[0];
         assert_eq!(
-            record.closed_apps[0].launch,
+            recorded.launch,
             Some(LaunchTarget::Path("C:\\slack.exe".into()))
         );
+        assert_eq!(recorded.arguments.as_deref(), Some("--startup"));
+        assert_eq!(recorded.working_dir.as_deref(), Some("C:\\Users\\me"));
+        assert!(!recorded.had_window);
 
         // Next launch: exam mode, then restore.
         let mut flow = Flow::new();
@@ -378,12 +386,58 @@ mod tests {
         assert_eq!(flow.phase(), Phase::Restored);
         assert_eq!(
             *control.launched.lock().unwrap(),
-            vec![LaunchTarget::Path("C:\\slack.exe".into())]
+            vec![LaunchSpec {
+                target: LaunchTarget::Path("C:\\slack.exe".into()),
+                arguments: Some("--startup".into()),
+                working_dir: Some("C:\\Users\\me".into()),
+                background: true,
+            }],
+            "started exactly as before, in the background"
         );
         assert!(
             store.load().unwrap().is_none(),
             "journal cleared after a clean restore"
         );
+    }
+
+    #[test]
+    fn app_with_a_window_is_recorded_to_come_back_with_its_window() {
+        let mut control = FakeControl::with(vec![
+            process(1, 900, "slack.exe"),
+            process(2, 1, "slack.exe"),
+        ]);
+        control.details.insert(
+            1,
+            ProcessDetails {
+                path: Some("C:\\slack.exe".into()),
+                ..ProcessDetails::default()
+            },
+        );
+        // The window belongs to a child process, as with most Electron apps.
+        control.windowed.insert(2);
+        let (_control, _store, service) = setup(control);
+        let spec = service.scan().unwrap()[0].launch.clone().unwrap();
+        assert!(!spec.background);
+        assert_eq!(spec.arguments, None);
+    }
+
+    #[test]
+    fn restore_skips_apps_that_are_already_running_again() {
+        let mut control = FakeControl::with(vec![process(1, 900, "slack.exe")]);
+        control.details.insert(
+            1,
+            ProcessDetails {
+                path: Some("C:\\slack.exe".into()),
+                ..ProcessDetails::default()
+            },
+        );
+        let (control, _store, service) = setup(control);
+        let findings = service.scan().unwrap();
+        service.begin(&findings, 1).unwrap();
+        // The user started Slack again by hand before restoring.
+        let outcome = service.restore().unwrap();
+        assert_eq!(outcome.skipped, vec!["Slack"]);
+        assert!(control.launched.lock().unwrap().is_empty());
     }
 
     #[test]

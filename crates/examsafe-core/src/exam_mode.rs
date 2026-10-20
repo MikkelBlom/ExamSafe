@@ -8,7 +8,8 @@ use crate::ports::StoreError;
 
 /// Bump when the format changes; older records must stay readable by newer versions.
 /// v1 (prototype) had no app list; it reads as "nothing to reopen".
-pub const RECORD_VERSION: u32 = 2;
+/// v3 added each app's arguments, folder and window state.
+pub const RECORD_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExamModeRecord {
@@ -47,19 +48,39 @@ impl ExamModeRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::apps::LaunchTarget;
+    use crate::apps::{LaunchSpec, LaunchTarget};
 
     #[test]
     fn round_trips_through_json() {
         let mut record = ExamModeRecord::new(1_790_000_000);
-        record.closed_apps.push(ClosedApp {
-            entry_id: "slack".into(),
-            name: "Slack".into(),
-            processes: vec!["slack".into()],
-            launch: Some(LaunchTarget::AppId("Pkg!App".into())),
-        });
+        let spec = LaunchSpec {
+            target: LaunchTarget::AppId("Pkg!App".into()),
+            arguments: Some("--background \"a b\"".into()),
+            working_dir: Some("C:\\Work".into()),
+            background: true,
+        };
+        record.closed_apps.push(ClosedApp::new(
+            "slack",
+            "Slack",
+            vec!["slack".into()],
+            Some(&spec),
+        ));
         let json = record.to_json().unwrap();
-        assert_eq!(ExamModeRecord::from_json(&json).unwrap(), record);
+        let read = ExamModeRecord::from_json(&json).unwrap();
+        assert_eq!(read, record);
+        assert_eq!(read.closed_apps[0].launch_spec(), Some(spec));
+    }
+
+    #[test]
+    fn reads_v2_records_as_plain_windowed_launches() {
+        let json = r#"{"version":2,"started_unix":5,"closed_apps":[
+            {"entry_id":"slack","name":"Slack","processes":["slack"],
+             "launch":{"kind":"path","value":"C:\\slack.exe"}}]}"#;
+        let record = ExamModeRecord::from_json(json).unwrap();
+        assert_eq!(
+            record.closed_apps[0].launch_spec(),
+            Some(LaunchSpec::new(LaunchTarget::Path("C:\\slack.exe".into())))
+        );
     }
 
     #[test]

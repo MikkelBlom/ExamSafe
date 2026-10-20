@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use crate::apps::{LaunchTarget, ProcessDetails, RunningProcess};
+use crate::apps::{LaunchSpec, ProcessDetails, RunningProcess};
 use crate::exam_mode::ExamModeRecord;
 use crate::preferences::Preferences;
 use crate::protocol::{HelperAction, HelperResponse};
@@ -42,14 +42,17 @@ pub trait ProcessControl: Send + Sync {
     fn list(&self) -> Result<Vec<RunningProcess>, ProcessError>;
     /// Best effort: missing details are simply `None`.
     fn describe(&self, pid: u32) -> ProcessDetails;
+    /// Whether any of these processes shows a visible main window (a tray-only app does not).
+    fn has_visible_window(&self, pids: &[u32]) -> bool;
     /// Politely asks the processes' windows to close (like clicking the X). Best effort.
     fn request_close(&self, pids: &[u32]);
     /// Waits up to `timeout` in total; returns the pids that are still running.
     fn wait_for_exit(&self, pids: &[u32], timeout: Duration) -> Vec<u32>;
     /// Force-closes one process. Succeeds if it is already gone.
     fn terminate(&self, pid: u32) -> Result<(), ProcessError>;
-    /// Starts an app as the normal (non-admin) user.
-    fn launch(&self, target: &LaunchTarget) -> Result<(), ProcessError>;
+    /// Starts an app as the normal (non-admin) user, with the spec's arguments and folder, and
+    /// without showing a window when `spec.background` is set.
+    fn launch(&self, spec: &LaunchSpec) -> Result<(), ProcessError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

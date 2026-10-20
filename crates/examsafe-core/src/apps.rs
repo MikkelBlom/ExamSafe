@@ -85,14 +85,55 @@ pub struct ProcessDetails {
     pub path: Option<String>,
     /// Store app id (AUMID) for packaged apps such as Claude; these can't be started by path.
     pub app_id: Option<String>,
+    /// The full command line, program included, exactly as the process was started.
+    pub command_line: Option<String>,
+    /// The process's current directory.
+    pub working_dir: Option<String>,
 }
 
-/// How to start an app again on restore.
+/// What to start on restore.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum LaunchTarget {
     Path(String),
     AppId(String),
+}
+
+/// How to start an app again so it comes back the way it was: same program, same arguments,
+/// same folder, and in the background if it had no window open.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchSpec {
+    pub target: LaunchTarget,
+    /// Arguments after the program, as one string (Windows passes them that way).
+    pub arguments: Option<String>,
+    pub working_dir: Option<String>,
+    /// It had no visible window (e.g. it lived in the tray): start it without showing one.
+    pub background: bool,
+}
+
+impl LaunchSpec {
+    pub fn new(target: LaunchTarget) -> Self {
+        Self {
+            target,
+            arguments: None,
+            working_dir: None,
+            background: false,
+        }
+    }
+}
+
+/// The arguments part of a Windows command line: everything after the program, which is either
+/// quoted or ends at the first space. `None` when there are no arguments.
+pub fn command_line_arguments(command_line: &str) -> Option<String> {
+    let line = command_line.trim_start();
+    let rest = match line.strip_prefix('"') {
+        Some(quoted) => quoted.find('"').map_or("", |end| &quoted[end + 1..]),
+        None => line
+            .find(char::is_whitespace)
+            .map_or("", |end| &line[end..]),
+    };
+    let arguments = rest.trim();
+    (!arguments.is_empty()).then(|| arguments.to_owned())
 }
 
 /// A catalog app that is running right now.
@@ -104,7 +145,7 @@ pub struct AppFinding {
     pub pids: Vec<u32>,
     /// Processes of this app whose parent is not part of the app (the "main" processes).
     pub root_pids: Vec<u32>,
-    pub launch: Option<LaunchTarget>,
+    pub launch: Option<LaunchSpec>,
 }
 
 pub fn process_matches(pattern: &str, exe_name: &str) -> bool {
@@ -182,16 +223,27 @@ pub fn match_apps(
     findings
 }
 
-/// Picks how to reopen the app: a Store app id wins (can't be started by path), then a path.
-pub fn pick_launch(details: &[ProcessDetails]) -> Option<LaunchTarget> {
-    details
+/// Picks how to reopen the app from its main (root) processes: a Store app id wins (can't be
+/// started by path), then a path. Arguments and folder come from that same process, so the app
+/// is started exactly as it was. `had_window`: whether any of its processes showed a window.
+pub fn pick_launch(details: &[ProcessDetails], had_window: bool) -> Option<LaunchSpec> {
+    let (source, target) = details
         .iter()
-        .find_map(|d| d.app_id.clone().map(LaunchTarget::AppId))
+        .find_map(|d| d.app_id.clone().map(|id| (d, LaunchTarget::AppId(id))))
         .or_else(|| {
             details
                 .iter()
-                .find_map(|d| d.path.clone().map(LaunchTarget::Path))
-        })
+                .find_map(|d| d.path.clone().map(|path| (d, LaunchTarget::Path(path))))
+        })?;
+    Some(LaunchSpec {
+        target,
+        arguments: source
+            .command_line
+            .as_deref()
+            .and_then(command_line_arguments),
+        working_dir: source.working_dir.clone(),
+        background: !had_window,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -243,13 +295,49 @@ pub fn close_apps(
     outcome
 }
 
-/// An app that exam mode closed, as recorded in the journal.
+/// An app that exam mode closed, as recorded in the journal. The fields after `launch` were
+/// added in record v3; older records read them as "no arguments, had a window" (the old
+/// behaviour).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClosedApp {
     pub entry_id: String,
     pub name: String,
     pub processes: Vec<String>,
     pub launch: Option<LaunchTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
+    #[serde(default = "default_true")]
+    pub had_window: bool,
+}
+
+impl ClosedApp {
+    pub fn new(
+        entry_id: &str,
+        name: &str,
+        processes: Vec<String>,
+        launch: Option<&LaunchSpec>,
+    ) -> Self {
+        Self {
+            entry_id: entry_id.to_owned(),
+            name: name.to_owned(),
+            processes,
+            launch: launch.map(|spec| spec.target.clone()),
+            arguments: launch.and_then(|spec| spec.arguments.clone()),
+            working_dir: launch.and_then(|spec| spec.working_dir.clone()),
+            had_window: launch.is_none_or(|spec| !spec.background),
+        }
+    }
+
+    pub fn launch_spec(&self) -> Option<LaunchSpec> {
+        self.launch.clone().map(|target| LaunchSpec {
+            target,
+            arguments: self.arguments.clone(),
+            working_dir: self.working_dir.clone(),
+            background: !self.had_window,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -273,9 +361,9 @@ pub fn restore_apps(
                 .iter()
                 .any(|pattern| process_matches(pattern, &p.exe_name))
         });
-        match (&app.launch, already_running) {
+        match (app.launch_spec(), already_running) {
             (_, true) | (None, false) => outcome.skipped.push(app.name.clone()),
-            (Some(target), false) => match control.launch(target) {
+            (Some(spec), false) => match control.launch(&spec) {
                 Ok(()) => outcome.reopened.push(app.name.clone()),
                 Err(error) => outcome.failed.push(format!("{}: {error}", app.name)),
             },
@@ -297,8 +385,10 @@ pub(crate) mod tests {
         pub details: HashMap<u32, ProcessDetails>,
         pub stubborn: HashSet<u32>,
         pub protected_by_os: HashSet<u32>,
-        pub launched: Mutex<Vec<LaunchTarget>>,
+        pub launched: Mutex<Vec<LaunchSpec>>,
         pub close_requests: Mutex<Vec<u32>>,
+        /// Processes that show a visible window.
+        pub windowed: HashSet<u32>,
     }
 
     impl FakeControl {
@@ -330,6 +420,9 @@ pub(crate) mod tests {
         fn describe(&self, pid: u32) -> ProcessDetails {
             self.details.get(&pid).cloned().unwrap_or_default()
         }
+        fn has_visible_window(&self, pids: &[u32]) -> bool {
+            pids.iter().any(|pid| self.windowed.contains(pid))
+        }
         fn request_close(&self, pids: &[u32]) {
             self.close_requests.lock().unwrap().extend_from_slice(pids);
             for &pid in pids {
@@ -352,8 +445,8 @@ pub(crate) mod tests {
             self.kill(pid);
             Ok(())
         }
-        fn launch(&self, target: &LaunchTarget) -> Result<(), ProcessError> {
-            self.launched.lock().unwrap().push(target.clone());
+        fn launch(&self, spec: &LaunchSpec) -> Result<(), ProcessError> {
+            self.launched.lock().unwrap().push(spec.clone());
             Ok(())
         }
     }
@@ -453,21 +546,80 @@ pub(crate) mod tests {
     fn store_app_id_beats_path_for_relaunch() {
         let path_only = ProcessDetails {
             path: Some("C:\\a.exe".into()),
-            app_id: None,
+            ..ProcessDetails::default()
         };
         let packaged = ProcessDetails {
             path: Some("C:\\WindowsApps\\b.exe".into()),
             app_id: Some("Pkg!App".into()),
+            command_line: Some("\"C:\\WindowsApps\\b.exe\" --hidden".into()),
+            working_dir: None,
+        };
+        let spec = pick_launch(&[path_only.clone(), packaged], true).unwrap();
+        assert_eq!(spec.target, LaunchTarget::AppId("Pkg!App".into()));
+        assert_eq!(
+            spec.arguments.as_deref(),
+            Some("--hidden"),
+            "arguments come from the same process as the target"
+        );
+        assert_eq!(
+            pick_launch(&[path_only], true),
+            Some(LaunchSpec::new(LaunchTarget::Path("C:\\a.exe".into())))
+        );
+        assert_eq!(pick_launch(&[ProcessDetails::default()], true), None);
+    }
+
+    #[test]
+    fn relaunch_keeps_arguments_folder_and_background_state() {
+        let tray_app = ProcessDetails {
+            path: Some("C:\\Apps\\Discord\\Discord.exe".into()),
+            command_line: Some(
+                "\"C:\\Apps\\Discord\\Discord.exe\" --processStart Discord.exe --start-minimized"
+                    .into(),
+            ),
+            working_dir: Some("C:\\Apps\\Discord\\".into()),
+            app_id: None,
         };
         assert_eq!(
-            pick_launch(&[path_only.clone(), packaged]),
-            Some(LaunchTarget::AppId("Pkg!App".into()))
+            pick_launch(&[tray_app], false),
+            Some(LaunchSpec {
+                target: LaunchTarget::Path("C:\\Apps\\Discord\\Discord.exe".into()),
+                arguments: Some("--processStart Discord.exe --start-minimized".into()),
+                working_dir: Some("C:\\Apps\\Discord\\".into()),
+                background: true,
+            })
+        );
+    }
+
+    #[test]
+    fn command_line_arguments_follow_windows_quoting() {
+        assert_eq!(
+            command_line_arguments("\"C:\\Program Files\\A\\a.exe\" --x \"y z\""),
+            Some("--x \"y z\"".into())
         );
         assert_eq!(
-            pick_launch(&[path_only]),
-            Some(LaunchTarget::Path("C:\\a.exe".into()))
+            command_line_arguments("C:\\a.exe   -s  "),
+            Some("-s".into())
         );
-        assert_eq!(pick_launch(&[ProcessDetails::default()]), None);
+        assert_eq!(command_line_arguments("\"C:\\Program Files\\a.exe\""), None);
+        assert_eq!(command_line_arguments("C:\\a.exe"), None);
+        assert_eq!(command_line_arguments(""), None);
+        assert_eq!(command_line_arguments("\"unterminated"), None);
+    }
+
+    #[test]
+    fn closed_app_journal_entry_round_trips_the_launch_spec() {
+        let spec = LaunchSpec {
+            target: LaunchTarget::Path("C:\\a.exe".into()),
+            arguments: Some("--tray".into()),
+            working_dir: Some("C:\\".into()),
+            background: true,
+        };
+        let closed = ClosedApp::new("a", "A", vec!["a".into()], Some(&spec));
+        assert!(!closed.had_window);
+        assert_eq!(closed.launch_spec(), Some(spec));
+        let none = ClosedApp::new("b", "B", vec!["b".into()], None);
+        assert!(none.had_window);
+        assert_eq!(none.launch_spec(), None);
     }
 
     #[test]
@@ -500,33 +652,22 @@ pub(crate) mod tests {
     #[test]
     fn restore_reopens_only_what_is_not_running_and_has_a_target() {
         let control = FakeControl::with(vec![]);
+        let slack = LaunchSpec {
+            target: LaunchTarget::Path("C:\\slack.exe".into()),
+            arguments: Some("--startup".into()),
+            working_dir: None,
+            background: true,
+        };
+        let ollama = LaunchSpec::new(LaunchTarget::Path("C:\\ollama.exe".into()));
         let closed = vec![
-            ClosedApp {
-                entry_id: "slack".into(),
-                name: "Slack".into(),
-                processes: vec!["slack".into()],
-                launch: Some(LaunchTarget::Path("C:\\slack.exe".into())),
-            },
-            ClosedApp {
-                entry_id: "ollama".into(),
-                name: "Ollama".into(),
-                processes: vec!["ollama".into()],
-                launch: Some(LaunchTarget::Path("C:\\ollama.exe".into())),
-            },
-            ClosedApp {
-                entry_id: "toys".into(),
-                name: "PowerToys".into(),
-                processes: vec!["PowerToys.*".into()],
-                launch: None,
-            },
+            ClosedApp::new("slack", "Slack", vec!["slack".into()], Some(&slack)),
+            ClosedApp::new("ollama", "Ollama", vec!["ollama".into()], Some(&ollama)),
+            ClosedApp::new("toys", "PowerToys", vec!["PowerToys.*".into()], None),
         ];
         let running = vec![process(9, 900, "ollama.exe")];
         let outcome = restore_apps(&control, &closed, &running);
         assert_eq!(outcome.reopened, vec!["Slack"]);
         assert_eq!(outcome.skipped, vec!["Ollama", "PowerToys"]);
-        assert_eq!(
-            *control.launched.lock().unwrap(),
-            vec![LaunchTarget::Path("C:\\slack.exe".into())]
-        );
+        assert_eq!(*control.launched.lock().unwrap(), vec![slack]);
     }
 }
