@@ -7,7 +7,10 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+use crate::system::SystemChange;
+
+/// v2 added `ApplyChanges` and per-item failures.
+pub const PROTOCOL_VERSION: u32 = 2;
 /// First command-line argument that switches the ExamSafe executable into helper mode.
 pub const HELPER_MODE_FLAG: &str = "--helper";
 pub const RESPONSE_FILE_PREFIX: &str = "examsafe-helper-";
@@ -17,6 +20,9 @@ pub const RESPONSE_FILE_PREFIX: &str = "examsafe-helper-";
 pub enum HelperAction {
     /// Handshake only: proves the helper started and reports whether it is elevated.
     Ping,
+    /// Applies service and scheduled-task changes in order. Each change states its full end
+    /// state, so a retry is harmless. Protected items (security and exam software) are refused.
+    ApplyChanges { changes: Vec<SystemChange> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,6 +40,9 @@ pub struct HelperResponse {
     pub ok: bool,
     pub elevated: bool,
     pub message: String,
+    /// "Item: reason" for every change that did not succeed.
+    #[serde(default)]
+    pub failures: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -134,6 +143,19 @@ mod tests {
     }
 
     #[test]
+    fn apply_changes_request_round_trips() {
+        let mut request = sample_request();
+        request.action = HelperAction::ApplyChanges {
+            changes: vec![SystemChange::Task {
+                path: "\\A\\B".into(),
+                enabled: false,
+            }],
+        };
+        let encoded = encode_request(&request).unwrap();
+        assert_eq!(decode_request(&encoded).unwrap(), request);
+    }
+
+    #[test]
     fn rejects_bad_hex() {
         assert_eq!(decode_request("zz"), Err(ProtocolError::BadEncoding));
         assert_eq!(decode_request("abc"), Err(ProtocolError::BadEncoding));
@@ -142,11 +164,11 @@ mod tests {
     #[test]
     fn rejects_other_protocol_versions() {
         let mut request = sample_request();
-        request.protocol = 2;
+        request.protocol = 1;
         let encoded = encode_request(&request).unwrap();
         assert!(matches!(
             decode_request(&encoded),
-            Err(ProtocolError::Version { found: 2, .. })
+            Err(ProtocolError::Version { found: 1, .. })
         ));
     }
 

@@ -9,6 +9,10 @@ pub mod paths;
 #[cfg(windows)]
 pub mod processes;
 pub mod store;
+#[cfg(windows)]
+pub mod system;
 
 #[cfg(windows)]
 mod windows_impl;
+#[cfg(windows)]
+mod windows_system_impl;

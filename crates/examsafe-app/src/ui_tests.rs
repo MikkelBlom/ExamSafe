@@ -7,7 +7,9 @@ use std::rc::Rc;
 
 use i_slint_backend_testing::{AccessibleRole, ElementHandle};
 
-use crate::{AppWindow, Phase};
+use slint::{ModelRc, VecModel};
+
+use crate::{AppWindow, Phase, PlanItem};
 
 fn find(ui: &AppWindow, label: &str) -> Option<ElementHandle> {
     ElementHandle::find_by_accessible_label(ui, label).next()
@@ -53,18 +55,15 @@ fn window_texts_and_actions_follow_the_phase() {
     ui.set_running_count(1);
     assert!(has(
         &ui,
-        "1 app on the exam list is running. One click closes it, checks it stays closed, and reopens it afterwards."
+        "1 item on the exam list is on. One click turns it off, checks it stays off, and puts it back afterwards."
     ));
     ui.set_running_count(3);
     assert!(has(
         &ui,
-        "3 apps on the exam list are running. One click closes them, checks they stay closed, and reopens them afterwards."
+        "3 items on the exam list are on. One click turns them off, checks they stay off, and puts them back afterwards."
     ));
     ui.set_running_count(0);
-    assert!(has(
-        &ui,
-        "None of the apps on the exam list are running right now."
-    ));
+    assert!(has(&ui, "Nothing on the exam list is on right now."));
 
     // Busy: the button says so and cannot be pressed.
     ui.set_phase(Phase::Checking);
@@ -76,18 +75,18 @@ fn window_texts_and_actions_follow_the_phase() {
     // Confirm: asks with the right count, offers Cancel as the secondary action.
     ui.set_phase(Phase::Confirm);
     ui.set_issue_count(1);
-    assert!(has(&ui, "Close 1 app?"));
+    assert!(has(&ui, "Turn off 1 item?"));
     ui.set_issue_count(4);
-    assert!(has(&ui, "Close 4 apps?"));
-    button(&ui, "Close apps");
+    assert!(has(&ui, "Turn off 4 items?"));
+    button(&ui, "Turn them off");
     press(&ui, "Cancel");
     assert_eq!(secondary.get(), 1);
 
     // Ready: honest about whether anything was closed.
     ui.set_phase(Phase::Ready);
-    assert!(has(&ui, "Apps are closed"));
+    assert!(has(&ui, "Everything is off"));
     ui.set_issue_count(0);
-    assert!(has(&ui, "Nothing to close"));
+    assert!(has(&ui, "Nothing to turn off"));
     button(&ui, "Close ExamSafe");
 
     // Failed: shows the reason; offers restore only when something was changed.
@@ -118,6 +117,54 @@ fn window_texts_and_actions_follow_the_phase() {
     assert!(!ui.get_advanced_open());
     press(&ui, "Advanced");
     assert!(ui.get_advanced_open());
+
+    // Advanced rows: section titles once, state and planned action shown, a toggle only for
+    // items ExamSafe acts on, and toggling reports the row.
+    let toggled = Rc::new(Cell::new((-1, true)));
+    {
+        let toggled = Rc::clone(&toggled);
+        ui.on_plan_item_toggled(move |index, value| toggled.set((index, value)));
+    }
+    let row = |section: &str, name: &str, state: &str, action: &str, toggleable: bool| PlanItem {
+        section: section.into(),
+        name: name.into(),
+        detail: "detail".into(),
+        state: state.into(),
+        action: action.into(),
+        toggleable,
+        enabled: true,
+    };
+    ui.set_plan_items(ModelRc::new(VecModel::from(vec![
+        row(
+            "Services",
+            "TeamViewer",
+            "Running · Automatic",
+            "Stop and set to Disabled",
+            true,
+        ),
+        row(
+            "Network adapters",
+            "bdvpn",
+            "Connected",
+            "Shown only",
+            false,
+        ),
+    ])));
+    assert!(has(&ui, "Services"));
+    assert!(has(&ui, "Running · Automatic"));
+    assert!(has(&ui, "Stop and set to Disabled"));
+    assert!(has(&ui, "Network adapters"));
+    assert!(
+        !has(&ui, "Turn off bdvpn for the exam"),
+        "shown-only rows have no toggle"
+    );
+    let toggle = ElementHandle::find_by_accessible_label(&ui, "Turn off TeamViewer for the exam")
+        .next()
+        .expect("toggle for an actionable row");
+    assert_eq!(toggle.accessible_role(), Some(AccessibleRole::Checkbox));
+    toggle.invoke_accessible_default_action();
+    assert_eq!(toggled.get(), (0, false));
+
     press(&ui, "Back");
     assert!(!ui.get_advanced_open());
 }

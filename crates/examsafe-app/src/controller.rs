@@ -1,22 +1,23 @@
 //! Glue between the pure [`Flow`] state machine, the UI and the [`ExamService`].
 //!
-//! Everything here runs on the UI thread except the effect jobs, which run on a worker thread
-//! and post their results back with [`post`]. While a job runs, its progress steps animate; the
-//! result is applied once both the work and a minimum display time are done, so fast work still
-//! reads as deliberate and slow work never appears finished early.
+//! Everything here runs on the UI thread except the effect jobs and scans, which run on worker
+//! threads and post their results back with [`post`]. While a job runs, its progress steps
+//! animate; the result is applied once both the work and a minimum display time are done, so
+//! fast work still reads as deliberate and slow work never appears finished early.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use examsafe_core::apps::AppFinding;
+use examsafe_core::advanced::{AdvancedRow, InventorySnapshot, advanced_rows};
 use examsafe_core::flow::{Effect, Event, Flow, Phase as FlowPhase};
-use examsafe_core::service::{EffectOutput, ExamService, run_effect};
+use examsafe_core::ports::InventoryError;
+use examsafe_core::service::{EffectOutput, ExamService, Findings, run_effect};
 use examsafe_core::steps::{CHECK_STEPS, FIX_STEPS, RESTORE_STEPS, VERIFY_STEPS, step_states};
-use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, VecModel};
+use slint::{CloseRequestResponse, ComponentHandle, ModelRc, SharedString, Timer, VecModel};
 
-use crate::tray::{Tray, TrayCommand, TrayStatus};
+use crate::tray::{Tray, TrayCommand, TrayMenuState, TrayStatus};
 use crate::{AppWindow, Phase, PlanItem, StepItem};
 
 /// Pace of the progress steps.
@@ -54,7 +55,7 @@ fn on_tray_command(command: TrayCommand) {
 
 /// Result of a batch of effects executed on the worker thread.
 struct JobResult {
-    findings: Option<Vec<AppFinding>>,
+    findings: Option<Findings>,
     events: Vec<Event>,
 }
 
@@ -69,12 +70,16 @@ pub struct Controller {
     service: Arc<ExamService>,
     flow: RefCell<Flow>,
     tray: Tray,
-    /// Last scan: catalog apps running right now.
-    findings: RefCell<Vec<AppFinding>>,
+    /// Last scan: catalog apps running, catalog services and tasks as they are.
+    findings: RefCell<Findings>,
+    /// Startup items, ports and adapters for Advanced (read-only).
+    inventory: RefCell<InventorySnapshot>,
     /// Whether any scan has completed yet (so the UI can tell "none running" from "unknown").
     scanned: Cell<bool>,
-    /// Apps the user switched off in Advanced (by catalog id).
+    /// Keys of items the user switched off in Advanced (remembered in preferences).
     disabled: RefCell<Vec<String>>,
+    /// The Advanced rows behind `plan`, in the same order.
+    rows: RefCell<Vec<AdvancedRow>>,
     steps: Rc<VecModel<StepItem>>,
     plan: Rc<VecModel<PlanItem>>,
     app_names: Rc<VecModel<SharedString>>,
@@ -97,9 +102,11 @@ impl Controller {
             service,
             flow: RefCell::new(Flow::new()),
             tray,
-            findings: RefCell::new(Vec::new()),
+            findings: RefCell::new(Findings::default()),
+            inventory: RefCell::new(InventorySnapshot::default()),
             scanned: Cell::new(false),
             disabled: RefCell::new(Vec::new()),
+            rows: RefCell::new(Vec::new()),
             steps,
             plan,
             app_names,
@@ -125,13 +132,21 @@ impl Controller {
                 controller.toggle_plan_item(index, enabled);
             }
         });
+        let weak = Rc::downgrade(&controller);
+        ui.window().on_close_requested(move || {
+            weak.upgrade()
+                .map_or(CloseRequestResponse::HideWindow, |controller| {
+                    controller.close_requested()
+                })
+        });
         controller
     }
 
     pub fn start(self: &Rc<Self>) {
         match self.service.left_open() {
             Ok(left_open) => *self.disabled.borrow_mut() = left_open,
-            // Not fatal: without saved choices everything on the list is closed (the safe side).
+            // Not fatal: without saved choices everything on the list is turned off (the safe
+            // side).
             Err(error) => eprintln!("examsafe: could not read preferences: {error}"),
         }
         let exam_mode_active = match self.service.load_record() {
@@ -147,9 +162,10 @@ impl Controller {
         if !exam_mode_active {
             self.refresh_scan();
         }
+        self.refresh_inventory();
     }
 
-    /// Background scan so Advanced shows what is running before anything is pressed.
+    /// Background scan so Advanced shows what is there before anything is pressed.
     fn refresh_scan(&self) {
         let service = Arc::clone(&self.service);
         std::thread::spawn(move || match service.scan() {
@@ -159,6 +175,23 @@ impl Controller {
                 }
             }),
             Err(error) => eprintln!("examsafe: background scan failed: {error}"),
+        });
+    }
+
+    /// Background read of startup items, ports and adapters (read-only, for Advanced).
+    fn refresh_inventory(&self) {
+        let service = Arc::clone(&self.service);
+        std::thread::spawn(move || {
+            let inventory = service.inventory();
+            let snapshot = InventorySnapshot {
+                startup: or_empty(inventory.startup_items()),
+                ports: or_empty(inventory.listening_ports()),
+                adapters: or_empty(inventory.network_adapters()),
+            };
+            post(move |controller| {
+                *controller.inventory.borrow_mut() = snapshot;
+                controller.rebuild_plan();
+            });
         });
     }
 
@@ -173,9 +206,7 @@ impl Controller {
         };
         self.render();
         if effects.contains(&Effect::Quit) {
-            if let Err(error) = slint::quit_event_loop() {
-                eprintln!("examsafe: could not quit: {error}");
-            }
+            quit();
             return;
         }
         if effects.is_empty() {
@@ -285,23 +316,20 @@ impl Controller {
         for event in result.events {
             self.dispatch(event);
         }
-        if self.flow.borrow().phase() == FlowPhase::Restored {
+        let phase = self.flow.borrow().phase();
+        if matches!(phase, FlowPhase::Restored | FlowPhase::Ready) {
             self.refresh_scan();
+            self.refresh_inventory();
         }
     }
 
-    /// Apps the user agreed to close: running catalog apps minus those switched off.
-    fn selection(&self) -> Vec<AppFinding> {
-        let disabled = self.disabled.borrow();
-        self.findings
-            .borrow()
-            .iter()
-            .filter(|app| !disabled.contains(&app.entry_id))
-            .cloned()
-            .collect()
+    /// What the user agreed to change: everything active on the list minus what they switched
+    /// off.
+    fn selection(&self) -> Findings {
+        self.findings.borrow().selection(&self.disabled.borrow())
     }
 
-    fn set_findings(&self, findings: Vec<AppFinding>) {
+    fn set_findings(&self, findings: Findings) {
         *self.findings.borrow_mut() = findings;
         self.scanned.set(true);
         self.rebuild_plan();
@@ -309,52 +337,56 @@ impl Controller {
     }
 
     fn rebuild_plan(&self) {
-        let disabled = self.disabled.borrow();
-        let items: Vec<PlanItem> = self
-            .findings
-            .borrow()
+        let rows = advanced_rows(
+            self.service.catalog(),
+            &self.findings.borrow(),
+            &self.inventory.borrow(),
+            &self.disabled.borrow(),
+        );
+        let items: Vec<PlanItem> = rows
             .iter()
-            .map(|app| PlanItem {
-                category: app.category.as_str().into(),
-                name: app.name.as_str().into(),
-                method: if app.launch.is_some() {
-                    "Close now, reopen after the exam".into()
-                } else {
-                    "Close now".into()
-                },
-                enabled: !disabled.contains(&app.entry_id),
+            .enumerate()
+            .map(|(index, row)| {
+                let first_in_section = index == 0 || rows[index - 1].section != row.section;
+                PlanItem {
+                    section: if first_in_section {
+                        row.section.title().into()
+                    } else {
+                        SharedString::new()
+                    },
+                    name: row.name.as_str().into(),
+                    detail: row.detail.as_str().into(),
+                    state: row.state.as_str().into(),
+                    action: row.action.as_str().into(),
+                    toggleable: row.key.is_some(),
+                    enabled: row.enabled,
+                }
             })
             .collect();
+        *self.rows.borrow_mut() = rows;
         self.plan.set_vec(items);
     }
 
     fn toggle_plan_item(&self, index: i32, enabled: bool) {
-        let Ok(row) = usize::try_from(index) else {
-            return;
-        };
-        let Some(entry_id) = self
-            .findings
-            .borrow()
-            .get(row)
-            .map(|app| app.entry_id.clone())
-        else {
+        let key = usize::try_from(index)
+            .ok()
+            .and_then(|row| self.rows.borrow().get(row).and_then(|r| r.key.clone()));
+        let Some(key) = key else {
             return;
         };
         {
             let mut disabled = self.disabled.borrow_mut();
-            disabled.retain(|id| id != &entry_id);
+            disabled.retain(|id| id != &key);
             if !enabled {
-                disabled.push(entry_id.clone());
+                disabled.push(key.clone());
             }
         }
-        if let Err(error) = self.service.set_left_open(&entry_id, !enabled) {
+        if let Err(error) = self.service.set_left_open(&key, !enabled) {
             // The choice still applies to this run; it just is not remembered.
             eprintln!("examsafe: could not save preferences: {error}");
         }
-        if let Some(mut item) = self.plan.row_data(row) {
-            item.enabled = enabled;
-            self.plan.set_row_data(row, item);
-        }
+        // Rows linked to the same item (e.g. its ports) change with it.
+        self.rebuild_plan();
         self.render();
     }
 
@@ -370,20 +402,34 @@ impl Controller {
         self.steps.set_vec(items);
     }
 
-    /// Names for the confirm screen (will close) or exam mode (will reopen).
+    /// Names for the confirm screen (will be turned off) or exam mode (will be put back).
     fn app_names_for(&self, phase: FlowPhase) -> Vec<SharedString> {
         match phase {
             FlowPhase::Confirm => self
                 .selection()
-                .iter()
-                .map(|app| app.name.as_str().into())
+                .labels()
+                .into_iter()
+                .map(SharedString::from)
                 .collect(),
             FlowPhase::ExamMode => match self.service.load_record() {
                 Ok(Some(record)) => record
                     .closed_apps
                     .iter()
                     .filter(|app| app.launch.is_some())
-                    .map(|app| app.name.as_str().into())
+                    .map(|app| app.name.clone())
+                    .chain(
+                        record
+                            .services
+                            .iter()
+                            .map(|s| format!("{} (service)", s.display_name)),
+                    )
+                    .chain(record.tasks.iter().map(|t| {
+                        format!(
+                            "{} (scheduled task)",
+                            examsafe_core::system::task_name(&t.path)
+                        )
+                    }))
+                    .map(SharedString::from)
                     .collect(),
                 Ok(None) => Vec::new(),
                 Err(error) => {
@@ -395,21 +441,53 @@ impl Controller {
         }
     }
 
-    fn handle_tray(self: &Rc<Self>, command: TrayCommand) {
-        match command {
-            TrayCommand::Open => {
-                if let Some(ui) = self.ui.upgrade()
-                    && let Err(error) = ui.show()
-                {
-                    eprintln!("examsafe: could not show the window: {error}");
-                }
-            }
-            TrayCommand::Quit => {
-                if let Err(error) = slint::quit_event_loop() {
-                    eprintln!("examsafe: could not quit: {error}");
-                }
-            }
+    fn show_window(&self) {
+        if let Some(ui) = self.ui.upgrade()
+            && let Err(error) = ui.show()
+        {
+            eprintln!("examsafe: could not show the window: {error}");
         }
+    }
+
+    fn handle_tray(self: &Rc<Self>, command: TrayCommand) {
+        let (phase, exam_mode_active) = {
+            let flow = self.flow.borrow();
+            (flow.phase(), flow.exam_mode_active())
+        };
+        match command {
+            TrayCommand::Open => self.show_window(),
+            // Same as pressing the big button: it checks, then asks before closing anything.
+            TrayCommand::MakeSafe => {
+                self.show_window();
+                if matches!(phase, FlowPhase::Idle | FlowPhase::Restored) {
+                    if phase == FlowPhase::Restored {
+                        self.dispatch(Event::PrimaryPressed);
+                    }
+                    self.dispatch(Event::PrimaryPressed);
+                }
+            }
+            TrayCommand::Restore => {
+                self.show_window();
+                match phase {
+                    FlowPhase::ExamMode => self.dispatch(Event::PrimaryPressed),
+                    FlowPhase::Failed if exam_mode_active => {
+                        self.dispatch(Event::SecondaryPressed);
+                    }
+                    _ => {}
+                }
+            }
+            TrayCommand::Quit => quit(),
+        }
+    }
+
+    /// The window's X hides it to the tray. Exception: once the PC is ready for the exam,
+    /// closing the window closes ExamSafe completely — it must not keep running in the tray
+    /// during the exam.
+    fn close_requested(&self) -> CloseRequestResponse {
+        if self.flow.borrow().phase() == FlowPhase::Ready {
+            quit();
+        }
+        CloseRequestResponse::HideWindow
     }
 
     fn render(&self) {
@@ -423,20 +501,35 @@ impl Controller {
             )
         };
         self.app_names.set_vec(self.app_names_for(phase));
+        let running = self.scanned.get().then(|| self.selection().len());
         if let Some(ui) = self.ui.upgrade() {
             ui.set_phase(to_ui_phase(phase));
             ui.set_issue_count(i32::try_from(issues).unwrap_or(i32::MAX));
             ui.set_failure_reason(failure.into());
             ui.set_exam_mode_active(exam_mode_active);
-            let running = if self.scanned.get() {
-                i32::try_from(self.selection().len()).unwrap_or(i32::MAX)
-            } else {
-                -1
-            };
-            ui.set_running_count(running);
+            ui.set_running_count(running.map_or(-1, |n| i32::try_from(n).unwrap_or(i32::MAX)));
         }
-        let (status, tooltip) = tray_status(phase);
-        self.tray.set_status(status, tooltip);
+        let (status, tooltip) = tray_status(phase, running);
+        self.tray.set_status(status, &tooltip);
+        self.tray.set_menu_state(TrayMenuState {
+            make_safe: matches!(phase, FlowPhase::Idle | FlowPhase::Restored),
+            restore: phase == FlowPhase::ExamMode
+                || (phase == FlowPhase::Failed && exam_mode_active),
+        });
+    }
+}
+
+/// Advanced is informational for these: a failed read shows an empty section, not an error.
+fn or_empty<T>(result: Result<Vec<T>, InventoryError>) -> Vec<T> {
+    result.unwrap_or_else(|error| {
+        eprintln!("examsafe: {error}");
+        Vec::new()
+    })
+}
+
+fn quit() {
+    if let Err(error) = slint::quit_event_loop() {
+        eprintln!("examsafe: could not quit: {error}");
     }
 }
 
@@ -444,7 +537,7 @@ fn execute_effects(
     service: &ExamService,
     effects: &[Effect],
     disabled: &[String],
-    selection: &[AppFinding],
+    selection: &Findings,
 ) -> JobResult {
     let mut result = JobResult {
         findings: None,
@@ -494,19 +587,40 @@ fn to_ui_phase(phase: FlowPhase) -> Phase {
     }
 }
 
-fn tray_status(phase: FlowPhase) -> (TrayStatus, &'static str) {
+/// Tray colour and hover text. `active` is how many listed items are on right now (once known).
+pub fn tray_status(phase: FlowPhase, active: Option<usize>) -> (TrayStatus, String) {
+    let text = |s: &str| s.to_owned();
     match phase {
-        FlowPhase::Idle | FlowPhase::Confirm => (TrayStatus::Neutral, "ExamSafe: not ready yet"),
-        FlowPhase::Ready => (TrayStatus::Safe, "ExamSafe: apps closed and checked"),
-        FlowPhase::Restored => (TrayStatus::Safe, "ExamSafe: back to normal"),
+        FlowPhase::Idle => match active {
+            Some(0) => (
+                TrayStatus::Neutral,
+                text("ExamSafe: nothing on the exam list is on"),
+            ),
+            Some(1) => (
+                TrayStatus::Neutral,
+                text("ExamSafe: 1 item on the exam list is on"),
+            ),
+            Some(n) => (
+                TrayStatus::Neutral,
+                format!("ExamSafe: {n} items on the exam list are on"),
+            ),
+            None => (TrayStatus::Neutral, text("ExamSafe: not ready yet")),
+        },
+        FlowPhase::Confirm => (TrayStatus::Neutral, text("ExamSafe: waiting for your OK")),
+        FlowPhase::Ready => (
+            TrayStatus::Safe,
+            text("ExamSafe: ready for the exam. Close ExamSafe now"),
+        ),
+        FlowPhase::Restored => (TrayStatus::Safe, text("ExamSafe: back to normal")),
         FlowPhase::ExamMode => (
             TrayStatus::ExamMode,
-            "ExamSafe: exam mode is on, restore when done",
+            text("ExamSafe: exam mode is on, restore when done"),
         ),
-        FlowPhase::Failed => (TrayStatus::Problem, "ExamSafe: needs attention"),
-        FlowPhase::Checking | FlowPhase::Fixing | FlowPhase::Verifying | FlowPhase::Restoring => {
-            (TrayStatus::Busy, "ExamSafe: working…")
-        }
+        FlowPhase::Failed => (TrayStatus::Problem, text("ExamSafe: needs attention")),
+        FlowPhase::Checking => (TrayStatus::Busy, text("ExamSafe: checking…")),
+        FlowPhase::Fixing => (TrayStatus::Busy, text("ExamSafe: turning things off…")),
+        FlowPhase::Verifying => (TrayStatus::Busy, text("ExamSafe: double-checking…")),
+        FlowPhase::Restoring => (TrayStatus::Busy, text("ExamSafe: putting things back…")),
     }
 }
 
@@ -514,4 +628,44 @@ fn unix_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tray_tooltip_states_the_count_and_stays_short() {
+        assert_eq!(
+            tray_status(FlowPhase::Idle, Some(3)).1,
+            "ExamSafe: 3 items on the exam list are on"
+        );
+        assert_eq!(
+            tray_status(FlowPhase::Idle, Some(1)).1,
+            "ExamSafe: 1 item on the exam list is on"
+        );
+        assert_eq!(
+            tray_status(FlowPhase::Idle, None).1,
+            "ExamSafe: not ready yet"
+        );
+        for phase in [
+            FlowPhase::Idle,
+            FlowPhase::Checking,
+            FlowPhase::Confirm,
+            FlowPhase::Fixing,
+            FlowPhase::Verifying,
+            FlowPhase::Ready,
+            FlowPhase::ExamMode,
+            FlowPhase::Restoring,
+            FlowPhase::Restored,
+            FlowPhase::Failed,
+        ] {
+            // Windows cuts tray tooltips at 127 characters.
+            assert!(tray_status(phase, Some(999)).1.chars().count() < 128);
+        }
+        assert_eq!(
+            tray_status(FlowPhase::ExamMode, None).0,
+            TrayStatus::ExamMode
+        );
+    }
 }

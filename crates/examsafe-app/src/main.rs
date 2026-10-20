@@ -17,9 +17,11 @@ use std::time::Instant;
 
 use examsafe_core::apps::Catalog;
 use examsafe_core::protocol::HELPER_MODE_FLAG;
-use examsafe_core::service::{DEFAULT_GRACE, ExamService};
+use examsafe_core::service::{DEFAULT_GRACE, ExamService, Ports};
+use examsafe_platform::helper_client::{HelperClient, LaunchMode};
 use examsafe_platform::processes::{WindowsProcessControl, attach_parent_console};
 use examsafe_platform::store::{FileExamModeStore, FilePreferencesStore};
+use examsafe_platform::system::WindowsSystemInventory;
 use slint::ComponentHandle;
 
 use crate::controller::Controller;
@@ -77,10 +79,20 @@ fn build_service() -> Result<ExamService, Box<dyn std::error::Error>> {
         None => DEFAULT_CATALOG.to_owned(),
     };
     let catalog = Catalog::from_json(&catalog_json)?;
+    // EXAMSAFE_HELPER=direct runs the helper without a UAC prompt (development and the e2e
+    // scripts). It then has only the caller's rights, so it can never do more than they can.
+    let helper_mode = match std::env::var("EXAMSAFE_HELPER").as_deref() {
+        Ok("direct") => LaunchMode::Direct,
+        _ => LaunchMode::Elevated,
+    };
     Ok(ExamService::new(
-        Arc::new(WindowsProcessControl),
-        Arc::new(FileExamModeStore::in_app_data()),
-        Arc::new(FilePreferencesStore::in_app_data()),
+        Ports {
+            processes: Arc::new(WindowsProcessControl),
+            inventory: Arc::new(WindowsSystemInventory),
+            privileged: Arc::new(HelperClient::for_current_exe(helper_mode)?),
+            store: Arc::new(FileExamModeStore::in_app_data()),
+            preferences: Arc::new(FilePreferencesStore::in_app_data()),
+        },
         Arc::new(catalog),
         std::process::id(),
         DEFAULT_GRACE,

@@ -7,6 +7,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::ports::{ProcessControl, ProcessError};
+use crate::system::ServiceTarget;
 
 /// How long an app gets to exit after being force-closed before we call it a failure.
 pub const TERMINATE_WAIT: Duration = Duration::from_secs(3);
@@ -15,6 +16,9 @@ pub const TERMINATE_WAIT: Duration = Duration::from_secs(3);
 pub struct Catalog {
     pub version: u32,
     pub entries: Vec<CatalogEntry>,
+    /// Words that mark a VPN or virtual network adapter (matched in its name or description).
+    #[serde(default)]
+    pub virtual_adapters: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -23,7 +27,17 @@ pub struct CatalogEntry {
     pub name: String,
     pub category: String,
     /// Executable names without `.exe`; case-insensitive; a trailing `*` matches a prefix.
+    #[serde(default)]
     pub processes: Vec<String>,
+    /// Windows service names (not display names); same pattern rules.
+    #[serde(default)]
+    pub services: Vec<String>,
+    /// Full scheduled-task paths, e.g. `\PowerToys\Autorun for *`; same pattern rules.
+    #[serde(default)]
+    pub tasks: Vec<String>,
+    /// What this entry's services are set to for the exam (default: disabled).
+    #[serde(default)]
+    pub service_start: ServiceTarget,
     /// Reopen this app when restoring.
     #[serde(default = "default_true")]
     pub relaunch: bool,
@@ -59,8 +73,15 @@ impl Catalog {
             if entry.name.trim().is_empty() {
                 return invalid("name is empty");
             }
-            if entry.processes.is_empty() || entry.processes.iter().any(|p| p.trim().is_empty()) {
-                return invalid("needs at least one non-empty process name");
+            let footprints = || {
+                entry
+                    .processes
+                    .iter()
+                    .chain(&entry.services)
+                    .chain(&entry.tasks)
+            };
+            if footprints().next().is_none() || footprints().any(|p| p.trim().is_empty()) {
+                return invalid("needs at least one non-empty process, service or task");
             }
         }
         Ok(catalog)
@@ -149,8 +170,13 @@ pub struct AppFinding {
 }
 
 pub fn process_matches(pattern: &str, exe_name: &str) -> bool {
-    let name = strip_exe(exe_name).to_lowercase();
-    let pattern = strip_exe(pattern).to_lowercase();
+    name_matches(strip_exe(pattern), strip_exe(exe_name))
+}
+
+/// Case-insensitive match; a trailing `*` in the pattern matches any suffix.
+pub fn name_matches(pattern: &str, name: &str) -> bool {
+    let name = name.to_lowercase();
+    let pattern = pattern.to_lowercase();
     match pattern.strip_suffix('*') {
         Some(prefix) => name.starts_with(prefix),
         None => name == pattern,
@@ -492,6 +518,15 @@ pub(crate) mod tests {
             Catalog::from_json(empty),
             Err(CatalogError::Entry { .. })
         ));
+        let blank_service =
+            r#"{"version":1,"entries":[{"id":"a","name":"A","category":"x","services":[" "]}]}"#;
+        assert!(matches!(
+            Catalog::from_json(blank_service),
+            Err(CatalogError::Entry { .. })
+        ));
+        let service_only =
+            r#"{"version":1,"entries":[{"id":"a","name":"A","category":"x","services":["A"]}]}"#;
+        assert!(Catalog::from_json(service_only).is_ok());
         assert!(matches!(
             Catalog::from_json("nope"),
             Err(CatalogError::Json(_))

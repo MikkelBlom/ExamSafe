@@ -5,10 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::apps::ClosedApp;
 use crate::ports::StoreError;
+use crate::system::{ServiceSnapshot, TaskSnapshot};
 
 /// Bump when the format changes; older records must stay readable by newer versions.
 /// v1 (prototype) had no app list; it reads as "nothing to reopen".
-/// v3 added each app's arguments, folder and window state.
+/// v3 added each app's arguments, folder and window state, and services and scheduled tasks.
 pub const RECORD_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -17,6 +18,12 @@ pub struct ExamModeRecord {
     pub started_unix: u64,
     #[serde(default)]
     pub closed_apps: Vec<ClosedApp>,
+    /// Services as they were before exam mode changed them.
+    #[serde(default)]
+    pub services: Vec<ServiceSnapshot>,
+    /// Scheduled tasks as they were before exam mode changed them.
+    #[serde(default)]
+    pub tasks: Vec<TaskSnapshot>,
 }
 
 impl ExamModeRecord {
@@ -25,7 +32,14 @@ impl ExamModeRecord {
             version: RECORD_VERSION,
             started_unix,
             closed_apps: Vec::new(),
+            services: Vec::new(),
+            tasks: Vec::new(),
         }
+    }
+
+    /// Whether this record holds anything that restore must put back.
+    pub fn is_empty(&self) -> bool {
+        self.closed_apps.is_empty() && self.services.is_empty() && self.tasks.is_empty()
     }
 
     pub fn to_json(&self) -> Result<String, StoreError> {
@@ -65,10 +79,22 @@ mod tests {
             vec!["slack".into()],
             Some(&spec),
         ));
+        record.services.push(ServiceSnapshot {
+            name: "TeamViewer".into(),
+            display_name: "TeamViewer".into(),
+            start_type: crate::system::StartType::AutomaticDelayed,
+            was_running: true,
+            target: crate::system::StartType::Disabled,
+        });
+        record.tasks.push(TaskSnapshot {
+            path: "\\PowerToys\\Autorun".into(),
+            enabled: true,
+        });
         let json = record.to_json().unwrap();
         let read = ExamModeRecord::from_json(&json).unwrap();
         assert_eq!(read, record);
         assert_eq!(read.closed_apps[0].launch_spec(), Some(spec));
+        assert!(json.contains("\"automatic_delayed\""));
     }
 
     #[test]

@@ -9,9 +9,11 @@ later. Owner/baseline user: Mikkel (SDU student — Digital Exam + ExamMonitor).
 `docs/IDEA.md`.
 
 ## Current phase
-**Apps stage done (2026-10-03):** apps are really detected, closed, verified and reopened.
-Next stage: services, scheduled tasks and startup items via the elevated helper — confirm scope
-with Mikkel before starting each new stage. Never close Mikkel's open apps or trigger shutdowns
+**Services + tasks stage done (2026-10-20):** apps are closed and restored exactly (args,
+folder, window state); services and scheduled tasks are journaled, paused via the elevated
+helper, verified and restored exactly. Startup items, ports and adapters are shown only. Next
+candidates: startup items, VPN/virtual adapters, browser/IDE AI controls — confirm scope with
+Mikkel before starting each new stage. Quality gate: `tools/check.ps1` (no hosted CI). Never close Mikkel's open apps or trigger shutdowns
 while testing; use harmless targets (tools/e2e-charmap.ps1). Stack is decided: **Rust + Slint** with the software
 renderer (native, no Chromium/WebView wrapper — do not propose Tauri or Electron again).
 Code architecture and quality gate: `docs/ARCHITECTURE.md` — keep it strict: layer rules are

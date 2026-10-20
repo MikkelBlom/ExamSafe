@@ -11,6 +11,7 @@
 use examsafe_core::protocol::{
     HelperAction, HelperRequest, HelperResponse, PROTOCOL_VERSION, decode_request,
 };
+use examsafe_core::system::SystemChange;
 use examsafe_platform::elevation::is_elevated;
 
 /// Runs helper mode. `args` are the arguments after the helper-mode flag.
@@ -42,24 +43,57 @@ fn parse_args(args: &[String]) -> Result<&str, String> {
 }
 
 fn execute(request: &HelperRequest) -> HelperResponse {
-    let (ok, elevated, message) = match request.action {
-        HelperAction::Ping => match is_elevated() {
-            Ok(true) => (true, true, "Responded with administrator rights".to_owned()),
-            Ok(false) => (
-                true,
-                false,
-                "Responded without administrator rights".to_owned(),
-            ),
-            Err(error) => (false, false, format!("could not read own rights: {error}")),
-        },
+    let elevated = is_elevated();
+    let mut failures = Vec::new();
+    let (ok, message) = match (&request.action, &elevated) {
+        (_, Err(error)) => (false, format!("could not read own rights: {error}")),
+        (HelperAction::Ping, Ok(true)) => (true, "Responded with administrator rights".to_owned()),
+        (HelperAction::Ping, Ok(false)) => {
+            (true, "Responded without administrator rights".to_owned())
+        }
+        (HelperAction::ApplyChanges { changes }, Ok(_)) => {
+            failures = apply_all(changes, apply_change);
+            if failures.is_empty() {
+                (true, format!("{} change(s) applied", changes.len()))
+            } else {
+                (false, failures.join("; "))
+            }
+        }
     };
     HelperResponse {
         protocol: PROTOCOL_VERSION,
         id: request.id.clone(),
         ok,
-        elevated,
+        elevated: elevated.unwrap_or(false),
         message,
+        failures,
     }
+}
+
+/// Applies every change in order, continuing past failures (each change is independent and
+/// states its full end state). Returns "Item: reason" per failure.
+fn apply_all(
+    changes: &[SystemChange],
+    apply: impl Fn(&SystemChange) -> Result<(), String>,
+) -> Vec<String> {
+    changes
+        .iter()
+        .filter_map(|change| {
+            apply(change)
+                .err()
+                .map(|reason| format!("{}: {reason}", change.subject()))
+        })
+        .collect()
+}
+
+#[cfg(windows)]
+fn apply_change(change: &SystemChange) -> Result<(), String> {
+    examsafe_platform::system::apply_change(change)
+}
+
+#[cfg(not(windows))]
+fn apply_change(_change: &SystemChange) -> Result<(), String> {
+    Err("not supported on this platform yet".to_owned())
 }
 
 #[cfg(test)]
@@ -82,6 +116,32 @@ mod tests {
     #[test]
     fn bad_request_fails_with_exit_code_2() {
         assert_eq!(run(&["--request".to_owned(), "zz".to_owned()]), 2);
+    }
+
+    #[test]
+    fn applies_every_change_and_names_the_failures() {
+        let changes = vec![
+            SystemChange::Task {
+                path: "\\A".into(),
+                enabled: false,
+            },
+            SystemChange::Task {
+                path: "\\B".into(),
+                enabled: false,
+            },
+            SystemChange::Task {
+                path: "\\C".into(),
+                enabled: false,
+            },
+        ];
+        let failures = apply_all(&changes, |change| {
+            if change.subject() == "\\B" {
+                Err("access denied".into())
+            } else {
+                Ok(())
+            }
+        });
+        assert_eq!(failures, vec!["\\B: access denied"]);
     }
 
     #[test]

@@ -2,9 +2,11 @@
 //! the window, so it doubles as the end-to-end test harness.
 //!
 //! Commands:
-//!   scan               list catalog apps that are running
-//!   make-safe --yes    close them, verify, and record them for restore (--yes = confirm)
-//!   restore            reopen what exam mode closed
+//!   scan               list catalog apps that are running, and catalog services and scheduled
+//!                      tasks with their state and what exam mode would do
+//!   inventory          also list startup items, listening ports and network adapters
+//!   make-safe --yes    turn them off, verify, and record them for restore (--yes = confirm)
+//!   restore            put back exactly what exam mode changed
 //!   status             is exam mode on, and what is recorded
 //!
 //! Exit codes: 0 done, 1 failed, 2 usage error, 3 confirmation needed (add --yes).
@@ -12,11 +14,15 @@
 use std::collections::VecDeque;
 use std::io::Write;
 
-use examsafe_core::apps::{AppFinding, ClosedApp, LaunchTarget};
+use examsafe_core::advanced::port_owner_key;
+use examsafe_core::apps::{ClosedApp, LaunchTarget};
 use examsafe_core::flow::{Effect, Event, Flow, Phase};
-use examsafe_core::service::{ExamService, run_effect};
+use examsafe_core::inventory::{is_virtual_adapter, startup_owner};
+use examsafe_core::service::{ExamService, Findings, run_effect};
+use examsafe_core::system::{ServiceFinding, ServiceState, TaskFinding};
 
-const USAGE: &str = "usage: ExamSafe.exe --cli scan | make-safe --yes | restore | status";
+const USAGE: &str =
+    "usage: ExamSafe.exe --cli scan | inventory | make-safe --yes | restore | status";
 
 /// Writes one line to stdout. A console that went away is not actionable, so write errors are
 /// deliberately ignored here (and only here).
@@ -28,11 +34,16 @@ pub fn run(args: &[String], service: &ExamService) -> u8 {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["scan"] => scan(service),
+        ["inventory"] => {
+            let code = scan(service);
+            inventory(service, &service.scan().unwrap_or_default());
+            code
+        }
         ["status"] => status(service),
         ["make-safe"] => {
             let code = scan(service);
             if code == 0 {
-                say("Nothing was closed. Add --yes to close the apps listed above.");
+                say("Nothing was changed. Add --yes to turn off what is listed above.");
                 3
             } else {
                 code
@@ -47,46 +58,153 @@ pub fn run(args: &[String], service: &ExamService) -> u8 {
     }
 }
 
-/// Apps the user chose to leave open (in the window's Advanced view). Unreadable preferences
-/// fall back to "close everything on the list", the safe side.
+/// Items the user chose to leave alone (in the window's Advanced view). Unreadable preferences
+/// fall back to "turn off everything on the list", the safe side.
 fn left_open(service: &ExamService) -> Vec<String> {
     service.left_open().unwrap_or_else(|error| {
         say(&format!(
-            "Could not read preferences, closing everything on the list: {error}"
+            "Could not read preferences, turning off everything on the list: {error}"
         ));
         Vec::new()
     })
 }
 
+fn service_line(service: &ServiceFinding, left_alone: bool) -> String {
+    let now = format!(
+        "{}, {}",
+        service.info.state.label(),
+        service.info.start_type.label()
+    );
+    let plan = if left_alone {
+        "left alone (your choice)".to_owned()
+    } else if service.needs_change() && service.info.state == ServiceState::Stopped {
+        format!("will set {}", service.target.label())
+    } else if service.needs_change() {
+        format!("will stop + set {}", service.target.label())
+    } else {
+        "already off".to_owned()
+    };
+    format!(
+        "{:<44} {:<22} {now}; {plan}",
+        service.label(),
+        service.category
+    )
+}
+
+fn task_line(task: &TaskFinding, left_alone: bool) -> String {
+    let now = if task.info.enabled {
+        "Enabled"
+    } else {
+        "Disabled"
+    };
+    let plan = if left_alone {
+        "left alone (your choice)"
+    } else if task.needs_change() {
+        "will disable"
+    } else {
+        "already off"
+    };
+    format!("{:<44} {:<22} {now}; {plan}", task.label(), task.category)
+}
+
 fn scan(service: &ExamService) -> u8 {
     let left_open = left_open(service);
-    match service.scan() {
-        Ok(findings) if findings.is_empty() => {
-            say("No apps from the exam list are running.");
-            0
-        }
-        Ok(findings) => {
-            for app in &findings {
-                let note = if left_open.contains(&app.entry_id) {
-                    ", left open (your choice)"
-                } else if app.launch.is_some() {
-                    ", will reopen"
-                } else {
-                    ""
-                };
-                say(&format!(
-                    "{:<24} {:<22} {} process(es){note}",
-                    app.name,
-                    app.category,
-                    app.pids.len(),
-                ));
-            }
-            0
-        }
+    let findings = match service.scan() {
+        Ok(findings) => findings,
         Err(error) => {
             say(&format!("Scan failed: {error}"));
-            1
+            return 1;
         }
+    };
+    if findings.is_empty() {
+        say("Nothing from the exam list is running or installed.");
+        return 0;
+    }
+    for app in &findings.apps {
+        let note = if left_open.contains(&app.entry_id) {
+            ", left open (your choice)"
+        } else if app.launch.is_some() {
+            ", will reopen"
+        } else {
+            ""
+        };
+        say(&format!(
+            "{:<44} {:<22} {} process(es){note}",
+            app.name,
+            app.category,
+            app.pids.len(),
+        ));
+    }
+    for item in &findings.services {
+        say(&service_line(item, left_open.contains(&item.key())));
+    }
+    for item in &findings.tasks {
+        say(&task_line(item, left_open.contains(&item.key())));
+    }
+    0
+}
+
+/// Read-only report of startup items, listening ports and network adapters.
+fn inventory(service: &ExamService, findings: &Findings) {
+    let catalog = service.catalog();
+    let inventory = service.inventory();
+    say("");
+    say("Startup items:");
+    match inventory.startup_items() {
+        Ok(items) => {
+            for item in items {
+                let owner = startup_owner(catalog, &item).unwrap_or("-");
+                let state = if item.enabled { "on" } else { "off" };
+                say(&format!(
+                    "  {:<34} {state:<4} {:<26} app: {owner} | {}",
+                    item.name, item.location, item.command
+                ));
+            }
+        }
+        Err(error) => say(&format!("  {error}")),
+    }
+    say("");
+    say("Listening ports:");
+    match inventory.listening_ports() {
+        Ok(ports) => {
+            for port in ports {
+                let owner = port_owner_key(catalog, findings, &port).map(|(_, name)| name);
+                let owner = owner.as_deref().unwrap_or("-");
+                let reach = if port.is_network_facing() {
+                    "network"
+                } else {
+                    "this PC only"
+                };
+                say(&format!(
+                    "  {} {:<6} {:<40} {:<14} {} | app: {owner}",
+                    port.protocol.label(),
+                    port.port,
+                    port.address,
+                    reach,
+                    port.process
+                ));
+            }
+        }
+        Err(error) => say(&format!("  {error}")),
+    }
+    say("");
+    say("Network adapters:");
+    match inventory.network_adapters() {
+        Ok(adapters) => {
+            for adapter in adapters {
+                let kind = if is_virtual_adapter(catalog, &adapter) {
+                    "VPN/virtual"
+                } else {
+                    "-"
+                };
+                let state = if adapter.up { "up" } else { "down" };
+                say(&format!(
+                    "  {:<34} {state:<5} {kind:<12} {}",
+                    adapter.name, adapter.description
+                ));
+            }
+        }
+        Err(error) => say(&format!("  {error}")),
     }
 }
 
@@ -95,11 +213,32 @@ fn status(service: &ExamService) -> u8 {
         Ok(None) => say("Exam mode: off"),
         Ok(Some(record)) => {
             say(&format!(
-                "Exam mode: on ({} app(s) recorded)",
-                record.closed_apps.len()
+                "Exam mode: on ({} app(s), {} service(s), {} scheduled task(s) recorded)",
+                record.closed_apps.len(),
+                record.services.len(),
+                record.tasks.len()
             ));
             for app in &record.closed_apps {
                 say(&format!("  {}", describe_closed(app)));
+            }
+            for service in &record.services {
+                say(&format!(
+                    "  {} (service) -> {}{}",
+                    service.display_name,
+                    service.start_type.label(),
+                    if service.was_running {
+                        ", running"
+                    } else {
+                        ", stopped"
+                    }
+                ));
+            }
+            for task in &record.tasks {
+                say(&format!(
+                    "  {} (scheduled task) -> {}",
+                    task.path,
+                    if task.enabled { "enabled" } else { "disabled" }
+                ));
             }
         }
         Err(error) => {
@@ -131,7 +270,7 @@ fn drive(service: &ExamService, restore: bool) -> u8 {
 
     let left_open = left_open(service);
     let mut flow = Flow::new();
-    let mut findings: Vec<AppFinding> = Vec::new();
+    let mut selection = Findings::default();
     let mut queue = VecDeque::from([Event::Launched { exam_mode_active }, Event::PrimaryPressed]);
     while let Some(event) = queue.pop_front() {
         let effects = match flow.handle(event) {
@@ -146,14 +285,11 @@ fn drive(service: &ExamService, restore: bool) -> u8 {
             if effect == Effect::Quit {
                 continue;
             }
-            match run_effect(service, effect, &left_open, &findings, unix_now()) {
+            match run_effect(service, effect, &left_open, &selection, unix_now()) {
                 Ok(output) => {
-                    if let Some(new) = output.findings {
-                        // Same rule as the window: apps the user leaves open are not selected.
-                        findings = new
-                            .into_iter()
-                            .filter(|app| !left_open.contains(&app.entry_id))
-                            .collect();
+                    if let Some(found) = output.findings {
+                        // Same rule as the window: items the user leaves alone are not selected.
+                        selection = found.selection(&left_open);
                     }
                     queue.extend(output.event);
                 }
@@ -164,26 +300,25 @@ fn drive(service: &ExamService, restore: bool) -> u8 {
             }
         }
         if flow.phase() == Phase::Confirm {
-            let names: Vec<&str> = findings.iter().map(|app| app.name.as_str()).collect();
-            say(&format!("  closing: {}", names.join(", ")));
+            say(&format!("  turning off: {}", selection.labels().join(", ")));
             queue.push_back(Event::PrimaryPressed);
         }
     }
 
     match flow.phase() {
         Phase::Ready if flow.issues() == 0 => {
-            say("Done: no apps from the exam list needed closing. Nothing to restore later.");
+            say("Done: nothing on the exam list needed turning off. Nothing to restore later.");
             0
         }
         Phase::Ready => {
             say(&format!(
-                "Done: {} app(s) closed and verified. Run 'restore' after the exam.",
+                "Done: {} item(s) turned off and verified. Run 'restore' after the exam.",
                 flow.issues()
             ));
             0
         }
         Phase::Restored => {
-            say("Done: apps reopened, exam mode off.");
+            say("Done: everything put back, exam mode off.");
             0
         }
         phase => {

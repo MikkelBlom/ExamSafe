@@ -21,8 +21,8 @@ foreach ($rule in $rules) {
     }
 }
 
-# unsafe is denied workspace-wide; the only allowed exemption is the Windows adapter module.
-$allowedUnsafe = @('crates/examsafe-platform/src/windows_impl.rs')
+# unsafe is denied workspace-wide; the only allowed exemptions are the Windows adapter modules.
+$allowedUnsafe = @('crates/examsafe-platform/src/windows_impl.rs', 'crates/examsafe-platform/src/windows_system_impl.rs')
 Get-ChildItem crates -Recurse -Filter *.rs | ForEach-Object {
     $relative = (Resolve-Path -Relative $_.FullName).TrimStart('.', '\', '/') -replace '\\', '/'
     if ((Select-String -Path $_.FullName -Pattern 'allow\(unsafe_code\)' -Quiet) -and $allowedUnsafe -notcontains $relative) {

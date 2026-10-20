@@ -65,3 +65,20 @@ readers), .gitattributes. dist\ExamSafe.exe rebuilt.
 binaries) — re-running works. Slint ElementHandle needs element debug info (debug builds only).
 **Next:** Services / scheduled tasks / startup items — try in a new session or implement
 manually from IDEA §7 + WORKING_NOTES. Mikkel should still try the real exe once.
+
+## 2026-10-20 — Claude Code (desktop) — Exact restore, services + tasks, Advanced, tray
+**Summary:** Removed hosted CI; `tools/check.ps1` is the local gate. (1) Exact app restore:
+journal v3 records root-process arguments, working dir (read from the PEB) and window state;
+restore relaunches via the desktop Explorer with the same arguments/folder, hidden if it had no
+window, skipping anything running. (2) Services + scheduled tasks: catalog `services`/`tasks`,
+SCM + Task Scheduler adapters, journal snapshots (delayed start included), one helper run per
+make-safe/restore (`ApplyChanges`), re-verification, protected lists enforced in core and helper.
+(3) Read-only scan vs IDEA §9 → catalog grew to 50 entries (see WORKING_NOTES). (4) Advanced view
+with six sections, state + planned action, remembered toggles (core `advanced` module). (5) Tray
+menu Open / Make safe / Restore / Quit with count tooltip; X hides to tray (quits in Ready).
+Tests: 78 core, 15 platform (real Windows reads), helper, headless UI; `e2e-charmap.ps1` (now also
+a background process with arguments) and `e2e-services.ps1` task part pass.
+**Issues:** PS7 `Start-Process -Wait` + console relaunch made the first e2e lose the restarted
+process; fixed by launching via Explorer. Minimised start showed a console window; switched to
+hidden. Service e2e needs an admin terminal — not run.
+**Next:** Mikkel runs `tools/e2e-services.ps1` elevated and clicks through the real UAC flow once.

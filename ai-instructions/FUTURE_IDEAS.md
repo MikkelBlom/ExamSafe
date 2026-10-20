@@ -30,3 +30,11 @@
 ## Platform
 - (Medium) macOS adapter (launchd agents, login items, TCC permissions).
 - (Low) Linux adapter (systemd user units, autostart .desktop files).
+
+## From the 2026-10-20 session
+- (Medium) Resolve Startup-folder `.lnk` targets (IShellLink) so shortcuts are tied to apps by
+  program, not only by name.
+- (Medium) Personal catalog overlay (`%LOCALAPPDATA%\ExamSafe\catalog.local.json`) for entries
+  that only make sense on one PC (PMS Vulnerability Watch, Launchpad…).
+- (Low) Show "needs admin" on the confirm screen when services/tasks are in the list, so the UAC
+  prompt is expected.

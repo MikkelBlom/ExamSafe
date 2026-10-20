@@ -5,8 +5,10 @@ use std::time::Duration;
 
 use crate::apps::{LaunchSpec, ProcessDetails, RunningProcess};
 use crate::exam_mode::ExamModeRecord;
+use crate::inventory::{ListeningPort, NetworkAdapter, StartupItem};
 use crate::preferences::Preferences;
 use crate::protocol::{HelperAction, HelperResponse};
+use crate::system::{ServiceInfo, TaskInfo};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StoreError {
@@ -70,4 +72,20 @@ pub enum HelperError {
 /// Runs an action with administrator rights (via ExamSafe's helper mode).
 pub trait PrivilegedExecutor: Send + Sync {
     fn execute(&self, action: HelperAction) -> Result<HelperResponse, HelperError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("could not read {what}: {reason}")]
+pub struct InventoryError {
+    pub what: &'static str,
+    pub reason: String,
+}
+
+/// Read-only view of what is installed and running besides apps. Needs no admin rights.
+pub trait SystemInventory: Send + Sync {
+    fn services(&self) -> Result<Vec<ServiceInfo>, InventoryError>;
+    fn tasks(&self) -> Result<Vec<TaskInfo>, InventoryError>;
+    fn startup_items(&self) -> Result<Vec<StartupItem>, InventoryError>;
+    fn listening_ports(&self) -> Result<Vec<ListeningPort>, InventoryError>;
+    fn network_adapters(&self) -> Result<Vec<NetworkAdapter>, InventoryError>;
 }

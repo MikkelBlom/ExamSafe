@@ -4,7 +4,7 @@ One click to make your PC exam-safe, and one click to put everything back afterw
 
 ![The whole flow: ready, closing apps, checked, exam mode, and restored afterwards](docs/screenshots/flow.jpg)
 
-**Status:** early version. Closing and reopening **apps** works and is tested end to end. Services, scheduled tasks, startup items and browser extensions are not handled yet.
+**Status:** early version. **Apps** are closed and reopened exactly as they were (arguments, folder, in the background or with their window). **Services and scheduled tasks** are paused through a small admin helper and put back to exactly their recorded start type and state. Startup items, listening ports and network adapters are shown in Advanced but not changed yet; browser extensions are not handled yet.
 
 ## Why I made it
 
@@ -26,7 +26,7 @@ The full product design and the reasoning behind it is in [`docs/IDEA.md`](docs/
 - **Rust**, with a [Slint](https://slint.dev) UI and a tray icon. Windows first, but the core has no Windows code in it, so macOS/Linux should be possible later.
 - Four crates with strict rules about what may depend on what: `core` (the exam flow as a pure state machine, no OS calls), `platform` (the Windows code, and the only place `unsafe` is allowed), `helper` (a small privileged mode for the things that need admin rights) and `app` (the UI).
 - The flow takes events and returns effects, so every transition, including failures and retries, is unit tested without a UI.
-- The architecture rules are checked by a script in CI, clippy warnings count as errors, and there is an end-to-end test that runs the real exe against a real app.
+- The architecture rules are checked by a script, clippy warnings count as errors, and there are end-to-end tests that run the real exe against real apps, a scheduled task and a service the scripts create themselves.
 
 More in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -46,12 +46,12 @@ For development: `cargo run -p examsafe-app`.
 
 ## Quality gate
 
+Runs locally (there is no hosted CI):
+
 ```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-pwsh ./tools/check-architecture.ps1
-pwsh ./tools/e2e-charmap.ps1   # real exe vs a real app (after cargo build --release)
+pwsh ./tools/check.ps1          # fmt, clippy -D warnings, tests, architecture rules
+pwsh ./tools/e2e-charmap.ps1    # real exe vs real apps (after cargo build --release)
+pwsh ./tools/e2e-services.ps1   # real exe vs a test task + test service (service part: admin terminal)
 ```
 
 © 2026 Mikkel Blom. All rights reserved.

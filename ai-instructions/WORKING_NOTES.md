@@ -26,12 +26,40 @@
   code really did and verified. Anything not handled is named in the visible scope note. Never
   ship simulated steps behind real-sounding text.
 
+## Decisions made (2026-10-20)
+- **No hosted CI** (Mikkel): `.github/workflows` deleted; `tools/check.ps1` is the gate.
+- **Services default to Disabled + stopped** (strongest reversible lever, IDEA §7); a catalog
+  entry can say `"service_start": "manual"`. A service that is stopped but Manual/Automatic still
+  counts as "to change" (it would be set Disabled). Already Disabled + stopped = untouched and not
+  journaled.
+- **Background apps come back hidden.** "No visible window when closed" → started with SW_HIDE
+  (first tried minimised: a console app then showed a minimised console). Tray icons still appear.
+- **Relaunch through the desktop Explorer** (IShellDispatch2::ShellExecute on the desktop folder
+  view, Raymond Chen's documented "start unelevated" pattern): normal user rights, not ExamSafe's
+  child, arguments/folder/show state kept. Falls back to ShellExecuteEx only when not elevated.
+  Store apps: IApplicationActivationManager with arguments (explorer `shell:AppsFolder` without
+  arguments if ExamSafe is elevated).
+- **Uninstalled meanwhile = nothing to restore** (service/task gone: not a restore failure).
+- **Shown-only rows have no toggle** (startup items, adapters, unowned ports): a switch that does
+  nothing would break the honesty rule. Ports owned by a listed app/service share its toggle.
+- **Window X hides to tray, except in Ready**: there it quits, because ExamSafe must not keep
+  running during the exam.
+- **Never touched, enforced twice**: `core::system::is_protected_*` (Defender, Bitdefender incl.
+  its WireGuard VPN tunnel, other AV vendors, any name containing exam-software words) and again
+  in `platform::system::apply_change` inside the helper. Drivers and Boot/System start types are
+  refused by the helper.
+- Unsafe is now allowed in two files: `windows_impl.rs` and `windows_system_impl.rs`.
+
 ## Open decisions
-- None blocking. Next stage (read-only detection engine) needs a go-ahead.
-- **CI blocked by GitHub billing (2026-09-30):** first run refused with "recent account payments
-  have failed or your spending limit needs to be increased". Mikkel must fix Billing & plans on
-  GitHub. Note: private repos use paid Actions minutes, and Windows runners count 2x. The same
-  gate runs locally (see docs/ARCHITECTURE.md) until then.
+- **Mikkel must run `tools/e2e-services.ps1` from an admin terminal once.** The service part
+  (real SCM changes, delayed-start restore) has unit tests with fakes and compiles, but Claude
+  could not run it (no elevated shell). The task part passed end to end.
+- **Mikkel-specific catalog entries** (PMS Vulnerability Watch, Launchpad, StartFlowLauncher,
+  Cisco Secure Client) ship to every user. Fine for now; split into a personal catalog later?
+- **Cisco Secure Client (VPN) is turned off by default.** If SDU exams need it on, switch it off
+  in Advanced (remembered) or remove from the catalog.
+- **Bitdefender VPN (WireGuard tunnel) is security software → never touched.** It shows as a
+  VPN adapter in Advanced; disconnect it by hand before an exam if ExamMonitor would mind.
 
 ## Prototype findings (2026-09-30)
 - **Measured** (release build, Mikkel's PC, `tools/measure.ps1`): 24.5 MB working set, 7.4 MB
@@ -85,3 +113,16 @@
   privilege, and one UAC prompt per fix.)
 - Catalog / traits / profiles are data files, not code — updatable without releases.
 - Slint UI uses a custom design system, not stock Fluent/Material styling.
+
+## Detection coverage vs IDEA §9 (read-only scan, 2026-10-20)
+Covered now: Claude app + CoworkVMService, Copilot, Wispr Flow, Ollama, its.exe, llama.cpp server
+(new, was listening on :8080), TeamViewer (app + service), GlideX (3 services), Chrome Remote
+Desktop host service, Phone Link, Cross Device (new entry), Quick Share (service), Slack, Discord
+(+ helper service), Notion, Google Drive, OneDrive (tasks), WSL, Docker Desktop, VirtualBox, SQL
+Server (all instances), PMS Vulnerability Watch, PowerToys (+ autorun task), Flow Launcher (+ task),
+Launchpad, Ubisoft Connect (+ task), Cisco Secure Client.
+Not covered (needs other mechanisms): Claude/Chrome Remote Desktop/Tampermonkey/Google Dictionary
+browser extensions; VS Code extensions (Claude Code, Cline, GitLab Duo); Rider ACP agents; config
+dirs (~/.claude etc. — trait layer); clipboard history (OS setting); Node dev servers and python
+on 7810-7812 (no safe process identity: shown as ports only); hypervisor (reported, not changed).
+Caveat: process name `claude` also matches the Claude Code CLI.

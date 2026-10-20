@@ -1,5 +1,5 @@
 //! Native tray icon (no WebView): hover shows a status tooltip, left-click opens the window,
-//! right-click shows the menu.
+//! right-click shows the menu (Open, Make safe, Restore, Quit).
 
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -30,31 +30,57 @@ impl TrayStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayCommand {
     Open,
+    MakeSafe,
+    Restore,
     Quit,
+}
+
+/// Which menu actions make sense in the current phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrayMenuState {
+    pub make_safe: bool,
+    pub restore: bool,
 }
 
 pub struct Tray {
     icon: TrayIcon,
-    open_id: MenuId,
-    quit_id: MenuId,
+    make_safe: MenuItem,
+    restore: MenuItem,
+    commands: Vec<(MenuId, TrayCommand)>,
 }
 
 impl Tray {
     pub fn create() -> Result<Self, Box<dyn std::error::Error>> {
         let open = MenuItem::new("Open ExamSafe", true, None);
-        let quit = MenuItem::new("Quit", true, None);
+        let make_safe = MenuItem::new("Make my PC exam-safe", false, None);
+        let restore = MenuItem::new("Restore my PC", false, None);
+        let quit = MenuItem::new("Quit ExamSafe", true, None);
         let menu = Menu::new();
-        menu.append_items(&[&open, &PredefinedMenuItem::separator(), &quit])?;
+        menu.append_items(&[
+            &open,
+            &PredefinedMenuItem::separator(),
+            &make_safe,
+            &restore,
+            &PredefinedMenuItem::separator(),
+            &quit,
+        ])?;
         let icon = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_menu_on_left_click(false)
             .with_tooltip("ExamSafe")
             .with_icon(make_icon(TrayStatus::Neutral)?)
             .build()?;
+        let commands = vec![
+            (open.id().clone(), TrayCommand::Open),
+            (make_safe.id().clone(), TrayCommand::MakeSafe),
+            (restore.id().clone(), TrayCommand::Restore),
+            (quit.id().clone(), TrayCommand::Quit),
+        ];
         Ok(Self {
             icon,
-            open_id: open.id().clone(),
-            quit_id: quit.id().clone(),
+            make_safe,
+            restore,
+            commands,
         })
     }
 
@@ -71,14 +97,18 @@ impl Tray {
                 on_command(TrayCommand::Open);
             }
         }));
-        let (open_id, quit_id) = (self.open_id.clone(), self.quit_id.clone());
+        let commands = self.commands.clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-            if event.id == open_id {
-                on_command(TrayCommand::Open);
-            } else if event.id == quit_id {
-                on_command(TrayCommand::Quit);
+            if let Some((_, command)) = commands.iter().find(|(id, _)| *id == event.id) {
+                on_command(*command);
             }
         }));
+    }
+
+    /// Greys out actions that do nothing in the current phase.
+    pub fn set_menu_state(&self, state: TrayMenuState) {
+        self.make_safe.set_enabled(state.make_safe);
+        self.restore.set_enabled(state.restore);
     }
 
     pub fn set_status(&self, status: TrayStatus, tooltip: &str) {
